@@ -8,6 +8,18 @@ const { drive } = require("googleapis/build/src/apis/drive/index.js");
 var BACKREF_KEY = "originalProgram";
 
 function start(config, onServerReady) {
+  var defaultOpts = {
+      PYRET: process.env.PYRET,
+      BASE_URL: config.baseUrl,
+      GOOGLE_API_KEY: config.google.apiKey,
+      GOOGLE_APP_ID: config.google.appId,
+      LOG_URL: config.logURL,
+      LOG_PASSWORD: config.logPassword,
+      LOG_USER: config.logUser,
+      GIT_REV : config.gitRev,
+      GIT_BRANCH: config.gitBranch,
+      POSTMESSAGE_ORIGIN: process.env.POSTMESSAGE_ORIGIN
+    };
   var express = require('express');
   var cookieSession = require('cookie-session');
   var cookieParser = require('cookie-parser');
@@ -107,14 +119,8 @@ function start(config, onServerReady) {
 
   app.get("/", function(req, res) {
     var content = loggedIn(req) ? "My Programs" : "Log In";
-    res.render("index.html", {
-      PYRET: process.env.PYRET,
+    res.render("index.html", { ...defaultOpts,
       LEFT_LINK: content,
-      GOOGLE_API_KEY: config.google.apiKey,
-      BASE_URL: config.baseUrl,
-      LOG_URL: config.logURL,
-      GIT_REV : config.gitRev,
-      GIT_BRANCH: config.gitBranch
     });
   });
 
@@ -529,30 +535,14 @@ function start(config, onServerReady) {
   });
 
   app.get("/editor", function(req, res) {
-    res.render("editor.html", {
-      PYRET: process.env.PYRET,
-      BASE_URL: config.baseUrl,
-      GOOGLE_API_KEY: config.google.apiKey,
-      GOOGLE_APP_ID: config.google.appId,
+    res.render("editor.html", { ...defaultOpts,
       CSRF_TOKEN: req.csrfToken(),
-      LOG_URL: config.logURL,
-      GIT_REV : config.gitRev,
-      GIT_BRANCH: config.gitBranch,
-      POSTMESSAGE_ORIGIN: process.env.POSTMESSAGE_ORIGIN
     });
   });
 
   app.get("/blocks", function(req, res) {
-    res.render("blocks.html", {
-      PYRET: process.env.PYRET,
-      BASE_URL: config.baseUrl,
-      GOOGLE_API_KEY: config.google.apiKey,
-      GOOGLE_APP_ID: config.google.appId,
+    res.render("blocks.html", { ...defaultOpts,
       CSRF_TOKEN: req.csrfToken(),
-      LOG_URL: config.logURL,
-      GIT_REV : config.gitRev,
-      GIT_BRANCH: config.gitBranch,
-      POSTMESSAGE_ORIGIN: process.env.POSTMESSAGE_ORIGIN
     });
   });
 
