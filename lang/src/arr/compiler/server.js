@@ -1,3 +1,4 @@
+/** @satisfies {PyretModule} */
 ({
   provides: {
     values: {
@@ -5,15 +6,16 @@
     }
   },
   requires: [],
-  nativeRequires: ['http', 'ws'],
-  theModule: function(runtime, _, uri, http, ws) {
   nativeRequires: ['http', 'ws', 'fs'],
   theModule: function(
     runtime, 
     _, 
     uri, 
+    /** @type {import('node:http')} */ http, 
     ws,
+    /** @type {import('node:fs')} */ fs,
   ) {
+    /** @import ws from "ws"  */
 
     const INFO = 4;
     const LOG = 3;
@@ -39,6 +41,11 @@
     // Port is a string for a file path, like /tmp/some-sock,
     const makeServer = function(port, onmessage) {
 
+      /**
+       * @typedef {{type: 'compile', options: unknown} | {type: 'info', options: unknown}} Queue
+       */
+
+      /** @type {Queue[]} */
       let runQueue = [];
 
       //info("Starting up server");
@@ -65,12 +72,12 @@
           }
         });
 
+        /** @type {ws.Server} */
         const wsServer = new ws.Server({
           server: server
         });
 
         wsServer.on('connection', function(connection) {
-
           function respond(jsonData) {
             info("Sending: ", jsonData);
             connection.send(jsonData);
@@ -110,10 +117,18 @@
 
           // TODO: query options, don't run all stages of the compiler, etc
           // TODO: thread through info
+          /**
+           * @typedef {{command: 'stop'} |
+           *           {command: 'shutdown'} |
+           *           {command: 'compile', compileOptions: unknown} |
+           *           {command: 'info', compileOptions: unknown, queryOptions: unknown}}
+           *  ServerMessage
+           */
 
           connection.on('message', function(message) {
             info(`Received Message: ${message}`);
 
+            /** @type {ServerMessage} */
             const parsed = JSON.parse(message);
 
             switch (parsed.command) {
