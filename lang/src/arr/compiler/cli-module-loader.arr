@@ -89,6 +89,9 @@ end
 # just static info and one with all the generated code. The CLI system needs to
 # know which kind it is to look up the right cached files
 
+# INVARIANT: compiler maintains, -info.js exists <=> -static exists.
+#            therefore split => info.js exists
+
 data CachedType:
   | split
   | single-file
