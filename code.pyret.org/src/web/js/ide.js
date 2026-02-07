@@ -1,4 +1,3 @@
-import React from 'react';
 import { init, LanguageError, UserError, HoverHighlight } from 'pyret-ide';
 import seedrandom from 'seedrandom';
 import sExpression from 's-expression';

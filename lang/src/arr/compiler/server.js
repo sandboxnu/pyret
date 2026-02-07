@@ -1,19 +1,28 @@
-{
+/** @satisfies {PyretModule} */
+({
   provides: {
     values: {
       "make-server": "tany"
     }
   },
   requires: [],
-  nativeRequires: ['http', 'ws'],
-  theModule: function(runtime, _, uri, http, ws) {
+  nativeRequires: ['http', 'ws', 'fs'],
+  theModule: function(
+    runtime, 
+    _, 
+    uri, 
+    /** @type {import('node:http')} */ http, 
+    ws,
+    /** @type {import('node:fs')} */ fs,
+  ) {
+    /** @import ws from "ws"  */
 
     const INFO = 4;
     const LOG = 3;
     const WARN = 2;
     const ERROR = 1;
     const SILENT = 0;
-    var LOG_LEVEL = ERROR;
+    let LOG_LEVEL = ERROR;
 
     function makeLogger(level) {
       return function(...args) {
@@ -32,11 +41,16 @@
     // Port is a string for a file path, like /tmp/some-sock,
     const makeServer = function(port, onmessage) {
 
-      var runQueue = [];
+      /**
+       * @typedef {{type: 'compile', options: unknown} | {type: 'info', options: unknown}} Queue
+       */
+
+      /** @type {Queue[]} */
+      let runQueue = [];
 
       //info("Starting up server");
       return runtime.pauseStack(function(restarter) {
-        var server = http.createServer(function(request, response) {
+        const server = http.createServer(function(request, response) {
           response.writeHead(404);
           response.end();
         });
@@ -58,12 +72,12 @@
           }
         });
 
-        var wsServer = new ws.Server({
+        /** @type {ws.Server} */
+        const wsServer = new ws.Server({
           server: server
         });
 
         wsServer.on('connection', function(connection) {
-
           function respond(jsonData) {
             info("Sending: ", jsonData);
             connection.send(jsonData);
@@ -73,9 +87,9 @@
           const respondForPy = runtime.makeFunction(respond, "respond");
 
           function tryQueue() {
-            info("Trying run queue, length is ", runQueue.length);
+            info(`Trying run queue, length is ${runQueue.length}`);
             if(runQueue.length > 0) {
-              var current = runQueue.pop();
+              const current = runQueue.pop();
               runtime.runThunk(function() {
                 return onmessage.app(current, respondForPy);
               }, function(result) {
@@ -96,32 +110,43 @@
           }
 
           
-          info((new Date()) + ' Connection accepted.');
+          info(`${new Date()} Connection accepted.`);
 
+
+          /**
+           * @typedef {{command: 'stop'} | 
+           *           {command: 'shutdown'} | 
+           *           {command: 'compile', compileOptions: unknown} |
+           *           {command: 'info', compileOptions: unknown}} ServerMessage
+           */
 
           connection.on('message', function(message) {
-            info('Received Message: ' + message);
+            info(`Received Message: ${message}`);
 
-            var parsed = JSON.parse(message);
+            /** @type {ServerMessage} */
+            const parsed = JSON.parse(message);
 
-            if(parsed.command === "stop") {
-              runtime.schedulePause(function(restarter) {
-                restarter.break(); 
-              });
-              tryQueue();
+            switch (parsed.command) {
+              case "stop": {
+                runtime.schedulePause(function(restarter) {
+                  restarter.break();
+                });
+                tryQueue();
+                break;
+              }
+              case "shutdown": {
+                runtime.breakAll();
+                info("Exiting due to shutdown request");
+                process.exit(0);
+                break;
+              }
+              case "compile":
+              case "info": {
+                runQueue.push({type: parsed.command, options: parsed.compileOptions});
+                tryQueue();
+                break;
+              }
             }
-
-            if(parsed.command === "shutdown") {
-              runtime.breakAll();
-              info("Exiting due to shutdown request");
-              process.exit(0);
-            }
-
-            if(parsed.command === "compile") {
-              runQueue.push(parsed.compileOptions);
-              tryQueue();
-            }
-
           });
           connection.on('close', function(reasonCode, description) {
             // info((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
@@ -144,4 +169,4 @@
       "make-server": runtime.makeFunction(makeServer, "make-server")
     }, {});
   }
-}
+})
