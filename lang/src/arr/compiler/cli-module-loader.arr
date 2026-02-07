@@ -271,6 +271,7 @@ fun set-loadable(basedir, locator, loadable) -> String block:
 
       ccp.print-js-runnable(fm.display)
 
+      # TODO: symlink instead???
       # NOTE(joe August 2017): This is a little bit dumb. When caching a file,
       # if we have enough information, split it into -static and -module
       # pieces.  If we don't have a dictionary of this information, save two
