@@ -89,7 +89,9 @@
           function tryQueue() {
             info(`Trying run queue, length is ${runQueue.length}`);
             if(runQueue.length > 0) {
-              const current = runQueue.pop();
+              // TODO: thread through the `type` field to server.arr.
+              // TODO: be smart about queries?
+              const current = runQueue.pop()?.options;
               runtime.runThunk(function() {
                 return onmessage.app(current, respondForPy);
               }, function(result) {
@@ -113,11 +115,14 @@
           info(`${new Date()} Connection accepted.`);
 
 
+          // TODO: query options, don't run all stages of the compiler, etc
+          // TODO: thread through info
           /**
-           * @typedef {{command: 'stop'} | 
-           *           {command: 'shutdown'} | 
+           * @typedef {{command: 'stop'} |
+           *           {command: 'shutdown'} |
            *           {command: 'compile', compileOptions: unknown} |
-           *           {command: 'info', compileOptions: unknown}} ServerMessage
+           *           {command: 'info', compileOptions: unknown, queryOptions: unknown}}
+           *  ServerMessage
            */
 
           connection.on('message', function(message) {
