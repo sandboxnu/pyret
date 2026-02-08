@@ -130,6 +130,7 @@
 		"yo": "^5.1.0"
 	},
 	"dependencies": {
-		"mustache": "^4.2.0"
+		"mustache": "^4.2.0",
+		"vscode-languageclient": "^9.0.1"
 	}
 }
