@@ -7,6 +7,7 @@ import srcloc as SL
 import error-display as ED
 import string-dict as SD
 import pathlib as P
+import json as JS
 import file("concat-lists.arr") as CL
 import file("type-structs.arr") as T
 import file("js-ast.arr") as J
@@ -133,8 +134,8 @@ end
 
 data ComputedEnvironment:
   | computed-none with:
-    method print-static-info(self, printer):
-      printer("PLACEHOLDER: computed-none\n")
+    method to-info-json(self):
+      JS.j-str("PLACEHOLDER: computed-none")
     end
   | computed-env(
       module-bindings :: SD.MutableStringDict<ModuleBind>,
@@ -144,8 +145,13 @@ data ComputedEnvironment:
       module-env :: SD.StringDict<ModuleBind>,
       env :: SD.StringDict<ValueBind>,
       type-env :: SD.StringDict<TypeBind>) with:
-    method print-static-info(self, printer):
-      printer("PLACEHOLDER: computed-env\n")
+    method to-info-json(self):
+      # TODO: serialize properly!
+      # JS.j-obj([string-dict: 
+      #   "bindings", JS.tojson(self.bindings), 
+      #   "env", JS.tojson(self.env)
+      # ])
+      JS.j-str("PLACEHOLDER: computed-env")
     end
 end
 
@@ -171,12 +177,11 @@ end
 data Loadable:
   | module-as-string(provides :: Provides, compile-env :: CompileEnvironment, post-compile-env :: ComputedEnvironment, result-printer :: CompileResult<Any>) with:
     method print-static-info(self, printer) block:
-      # TODO: make these not placeholders, call correctly
-      # we will probably want to split this up a little into 
-      # (a) methods that compute the needed info, and
-      # (b) methods to serialize to json / combine json guys
-      self.compile-env.print-static-info(printer)
-      self.post-compile-env.print-static-info(printer)
+      json = JS.j-obj([string-dict:
+        "compile-env", self.compile-env.to-info-json(),
+        "post-compile-env", self.post-compile-env.to-info-json()
+      ])
+      printer(json.serialize())
     end
     # NOTE(joe): there's a circular dependency between this module and js-of-pyret.arr; hence the Any above
 end
@@ -407,8 +412,8 @@ sharing:
   method uri-by-type-name(self, name):
     self.globals.types.get(name).and-then(_.uri-of-definition)
   end,
-  method print-static-info(self, printer):
-    printer("PLACEHOLDER: CompileEnvironment\n")
+  method to-info-json(self):
+    JS.j-str("PLACEHOLDER: CompileEnvironment")
   end
 end
 
