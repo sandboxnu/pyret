@@ -119,7 +119,14 @@
 						"Load `url-file()` imports from the local filesystem if they exist, otherwise from the URL"
 					],
 					"description": "Controls how `url-file()` imports are resolved"
-				}
+				},
+        "pyret.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "verbose",
+          "scope": "resource",
+          "description": "Traces logs of the communication between VS Code and the language server."
+        }
 			}
 		}
 	},
