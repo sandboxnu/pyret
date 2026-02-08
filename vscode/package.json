@@ -22,6 +22,7 @@
 		"syntaxes/pyret.tmLanguage.json"
 	],
 	"browser": "./dist/web/extension.js",
+  "main": "./dist/extension.js",
 	"contributes": {
 		"languages": [
 			{
