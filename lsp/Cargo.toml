@@ -1,0 +1,9 @@
+[package]
+name = "lsp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tower-lsp = "0.20.0"
+# TODO: need somthing else for wasm
+tokio = {version = "1.25.2", features = ["full"]}
