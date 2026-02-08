@@ -269,8 +269,10 @@ fun set-loadable(basedir, locator, loadable) -> String block:
     | ok(ccp) =>
       save-static-path = Filesystem.join(basedir, uri-to-path(locuri, locator.name()) + "-static.js")
       save-module-path = Filesystem.join(basedir, uri-to-path(locuri, locator.name()) + "-module.js")
+      save-info-path = Filesystem.join(basedir, uri-to-path(locuri, locator.name()) + "-info.js")
       fs = F.output-file(save-static-path, false)
       fm = F.output-file(save-module-path, false)
+      fi = F.output-file(save-info-path, false)
 
       ccp.print-js-runnable(fm.display)
 
@@ -289,10 +291,14 @@ fun set-loadable(basedir, locator, loadable) -> String block:
         ccp.print-js-runnable(fs.display)
       end
 
+      loadable.print-static-info(fi.display)
+
       fs.flush()
       fs.close-file()
       fm.flush()
       fm.close-file()
+      fi.flush()
+      fi.close-file()
 
       save-module-path
     | err(_) => ""
