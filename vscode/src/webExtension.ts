@@ -7,7 +7,6 @@ import {
   ServerOptions,
   TransportKind
 } from 'vscode-languageclient/node';
-import { Server } from 'http';
 
 let client: LanguageClient;
 
@@ -18,6 +17,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   let serverModule = context.asAbsolutePath(path.join('server', 'out', 'server.js'));
   let debugOptions = { execArgv: ['--nolazy', '--inspect=6009'] };
+  let outputChannel = vscode.window.createOutputChannel('Pyret Language Server');
 
   let serverOptions: ServerOptions = {
     run: { module: serverModule, transport: TransportKind.ipc },
@@ -32,7 +32,9 @@ export function activate(context: vscode.ExtensionContext) {
     documentSelector: [{ scheme: 'file', language: 'pyret' }],
     synchronize: {
       fileEvents: vscode.workspace.createFileSystemWatcher('**/*.arr')
-    }
+    },
+    outputChannel: outputChannel,
+    traceOutputChannel: outputChannel
   };
 
   client = new LanguageClient(
@@ -43,6 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   client.start();
+  outputChannel.appendLine('Pyret Language Server started');
 }
 
 export function deactivate(): Thenable<void> | undefined {
