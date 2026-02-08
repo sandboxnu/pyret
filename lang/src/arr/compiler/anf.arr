@@ -202,13 +202,26 @@ fun anf(e :: A.Expr, k :: ANFCont) -> N.AExpr:
       end
 
     | s-letrec(l, binds, body, _) =>
-      let-binds = for map(b from binds):
-        A.s-var-bind(b.l, b.b, A.s-undefined(l))
+      undef-inits = for map(b from binds):
+        b-without-ann = A.s-bind(b.b.l, b.b.shadows, b.b.id, A.a-blank)
+        A.s-var-bind(b.l, b-without-ann, A.s-undefined(l))
       end
-      assigns = for map(b from binds):
-        A.s-assign(b.l, b.b.id, b.value)
-      end
-      anf(A.s-let-expr(l, let-binds, A.s-block(l, assigns + [list: body]), true), k)
+      { rev-tmp-binds; rev-assigns } = 
+        for fold({ tmp-binds-acc; assigns-acc } from { [list: ]; [list: ] }, b from binds):
+          if A.is-a-blank(b.b.ann) or A.is-a-any(b.b.ann):
+            new-assign = A.s-assign(b.l, b.b.id, b.value)
+            { tmp-binds-acc; link(new-assign, assigns-acc) }
+          else:
+            tmp-name-id = mk-id(b.l, "letrec_ann").id
+            b-with-tmp = A.s-bind(b.b.l, b.b.shadows, tmp-name-id, b.b.ann)
+            new-bind = A.s-let-bind(b.l, b-with-tmp, b.value)
+            new-assign = A.s-assign(b.l, b.b.id, A.s-id(b.l, tmp-name-id))
+            { link(new-bind, tmp-binds-acc); link(new-assign, assigns-acc) }
+          end
+        end
+      inner-let = A.s-let-expr(l, rev-tmp-binds.reverse(), 
+        A.s-block(l, rev-assigns.reverse() + [list: body]), true)
+      anf(A.s-let-expr(l, undef-inits, inner-let, false), k)
 
     | s-data-expr(l, data-name, data-name-t, params, mixins, variants, shared, _check-loc, _check) =>
       fun anf-member(member :: A.VariantMember):
