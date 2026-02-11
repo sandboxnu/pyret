@@ -1,9 +1,11 @@
 {
   "name": "pyret",
+  "version": "0.0.0",
   "workspaces": [
     "lang",
     "codemirror-mode",
     "code.pyret.org",
     "npm"
-  ]
+  ],
+  "private": true
 }
