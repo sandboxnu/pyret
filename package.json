@@ -1,0 +1,9 @@
+{
+  "name": "pyret",
+  "workspaces": [
+    "lang",
+    "codemirror-mode",
+    "code.pyret.org",
+    "npm"
+  ]
+}
