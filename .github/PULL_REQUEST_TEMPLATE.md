@@ -15,7 +15,7 @@ Include alternatives considered and trade-offs if relevant. -->
 
 ## Testing
 
-<!-- Please describe how you tested this PR (both manually and with tests) Provide instructions so we can reproduce.
+<!-- Please describe how you tested this PR (both manually and with tests) Provide instructions so we can reproduce. If you're making a regression test, show that running that test on fails BEFORE your changes and passes AFTER your changes. 
 
 - [ ] Test A
 - [ ] Test B -->
