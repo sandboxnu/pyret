@@ -20,7 +20,11 @@ if [ "$#" -gt 0 ] && [ "$1" = "-v" ]; then
     VERBOSE=1
     shift 1
 fi
-
+if [ "$#" -lt 1 ]; then
+  echo "Expecting 1 argument; received $#"
+  echo "Usage: $PHASE [-v] file.arr [args]"
+  exit 1
+fi
 PHASE="$SYMLINK_NAME"
 PYRET_JARR="build/$PHASE/pyret.jarr"
 FILE=$1
