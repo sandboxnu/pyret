@@ -59,7 +59,7 @@ in Pyret development, read on:
 
 The easiest way to *run* a Pyret program from the command-line is:
 
-    $ ./src/scripts/phaseX -v <path-to-pyret-program-here> [command-line-args...]
+    $ ./src/scripts/phaseX [-v] <path-to-pyret-program-here> [command-line-args...]
 
 Where `X` is `0`, `A`, `B`, or `C`, indicating a phase (described below). For
 example:
