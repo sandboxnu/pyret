@@ -16,8 +16,7 @@ then
 fi
 
 VERBOSE=0
-if [ "$#" -gt 0 ] && [ "$1" = "-v" ]
-then
+if [ "$#" -gt 0 ] && [ "$1" = "-v" ]; then
     VERBOSE=1
     shift 1
 fi
