@@ -1780,20 +1780,16 @@ end
 data Ann:
   | a-blank with:
     method label(self): "a-blank" end,
-    method tosource(self): str-any end,
-    method is-ignorable(self): true end,
+    method tosource(self): str-any end
   | a-any(l :: Loc) with:
     method label(self): "a-any" end,
-    method tosource(self): str-any end,
-    method is-ignorable(self): true end,
+    method tosource(self): str-any end
   | a-name(l :: Loc, id :: Name) with:
     method label(self): "a-name" end,
-    method tosource(self): self.id.tosource() end,
-    method is-ignorable(self): false end,
+    method tosource(self): self.id.tosource() end
   | a-type-var(l :: Loc, id :: Name) with:
     method label(self): "a-type-var" end,
-    method tosource(self): self.id.tosource() end,
-    method is-ignorable(self): false end,
+    method tosource(self): self.id.tosource() end
   | a-arrow(l :: Loc, args :: List<Ann>, ret :: Ann, use-parens :: Boolean) with:
     method label(self): "a-arrow" end,
     method tosource(self):
@@ -1806,8 +1802,7 @@ data Ann:
       else:
         ann
       end
-    end,
-    method is-ignorable(self): false end,
+    end
   | a-arrow-argnames(l :: Loc, args :: List<AField>, ret :: Ann, use-parens :: Boolean) with:
     method label(self): "a-arrow-argnames" end,
     method tosource(self):
@@ -1822,49 +1817,48 @@ data Ann:
       else:
         ann
       end
-    end,
-    method is-ignorable(self): false end,
+    end
   | a-method(l :: Loc, args :: List<Ann>, ret :: Ann) with:
     method label(self): "a-method" end,
-    method tosource(self): PP.str("NYI: A-method") end,
-    method is-ignorable(self): false end,
+    method tosource(self): PP.str("NYI: A-method") end
   | a-record(l :: Loc, fields :: List<AField>) with:
     method label(self): "a-record" end,
     method tosource(self):
       PP.surround-separate(INDENT, 1, PP.lbrace + PP.rbrace, PP.lbrace, PP.commabreak, PP.rbrace,
         self.fields.map(_.tosource()))
-    end,
-    method is-ignorable(self): false end,
+    end
   | a-tuple(l :: Loc, fields :: List<Ann>) with:
     method label(self): "a-tuple" end,
     method tosource(self):
       PP.surround-separate(INDENT, 1, PP.lbrace + PP.rbrace, PP.lbrace, PP.semibreak, PP.rbrace,
         self.fields.map(_.tosource()))
-    end,
-    method is-ignorable(self): false end,
+    end
   | a-app(l :: Loc, ann :: Ann, args :: List<Ann>) with:
     method label(self): "a-app" end,
     method tosource(self):
       PP.group(self.ann.tosource()
           + PP.group(PP.langle + PP.nest(INDENT,
             PP.separate(PP.commabreak, self.args.map(_.tosource()))) + PP.rangle))
-    end,
-    method is-ignorable(self): false end,
+    end
   | a-pred(l :: Loc, ann :: Ann, exp :: Expr) with:
     method label(self): "a-pred" end,
-    method tosource(self): self.ann.tosource() + str-percent + PP.parens(self.exp.tosource()) end,
-    method is-ignorable(self): false end,
+    method tosource(self): self.ann.tosource() + str-percent + PP.parens(self.exp.tosource()) end
   | a-dot(l :: Loc, obj :: Name, field :: String) with:
     method label(self): "a-dot" end,
-    method tosource(self): self.obj.tosource() + PP.str("." + self.field) end,
-    method is-ignorable(self): false end,
+    method tosource(self): self.obj.tosource() + PP.str("." + self.field) end
   | a-checked(checked :: Ann, residual :: Ann) with:
     method label(self): "a-checked" end,
-    method tosource(self): self.residual.tosource() end,
-    method is-ignorable(self): false end
+    method tosource(self): self.residual.tosource() end
 sharing:
   method visit(self, visitor):
     self._match(visitor, lam(val): raise("No visitor field for " + self.label()) end)
+  end,
+  method is-ignorable(self):
+    cases(Ann) self:
+      | a-blank => true
+      | a-any(_) => true
+      | otherwise => false
+    end
   end
 end
 
