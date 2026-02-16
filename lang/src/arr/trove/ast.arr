@@ -1857,7 +1857,17 @@ sharing:
     cases(Ann) self:
       | a-blank => true
       | a-any(_) => true
-      | otherwise => false
+      | a-name(_, _) => false
+      | a-type-var(_, _) => false
+      | a-arrow(_, _, _, _) => false
+      | a-arrow-argnames(_, _, _, _) => false
+      | a-method(_, _, _) => false
+      | a-record(_, _) => false
+      | a-tuple(_, _) => false
+      | a-app(_, _, _) => false
+      | a-pred(_, _, _) => false
+      | a-dot(_, _, _) => false
+      | a-checked(_, _) => false
     end
   end
 end
