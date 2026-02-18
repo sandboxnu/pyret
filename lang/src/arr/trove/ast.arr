@@ -1780,10 +1780,12 @@ end
 data Ann:
   | a-blank with:
     method label(self): "a-blank" end,
-    method tosource(self): str-any end
+    method tosource(self): str-any end,
+    method is-ignorable(self): true end
   | a-any(l :: Loc) with:
     method label(self): "a-any" end,
-    method tosource(self): str-any end
+    method tosource(self): str-any end,
+    method is-ignorable(self): true end
   | a-name(l :: Loc, id :: Name) with:
     method label(self): "a-name" end,
     method tosource(self): self.id.tosource() end
@@ -1854,21 +1856,7 @@ sharing:
     self._match(visitor, lam(val): raise("No visitor field for " + self.label()) end)
   end,
   method is-ignorable(self):
-    cases(Ann) self:
-      | a-blank => true
-      | a-any(_) => true
-      | a-name(_, _) => false
-      | a-type-var(_, _) => false
-      | a-arrow(_, _, _, _) => false
-      | a-arrow-argnames(_, _, _, _) => false
-      | a-method(_, _, _) => false
-      | a-record(_, _) => false
-      | a-tuple(_, _) => false
-      | a-app(_, _, _) => false
-      | a-pred(_, _, _) => false
-      | a-dot(_, _, _) => false
-      | a-checked(_, _) => false
-    end
+    false
   end
 end
 
