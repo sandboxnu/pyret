@@ -24,8 +24,8 @@
     const SILENT = 0;
     let LOG_LEVEL = ERROR;
 
-    function makeLogger(level) {
-      return function(...args) {
+    function makeLogger(/** @type {number} */ level) {
+      return function(/** @type {...any} */...args) {
         if(LOG_LEVEL >= level) {
           console.log.apply(console, ["[server] ", new Date()].concat(args));
         }
@@ -39,7 +39,7 @@
 
 
     // Port is a string for a file path, like /tmp/some-sock,
-    const makeServer = function(port, onmessage) {
+    const makeServer = function(/** @type {string} */ port, /** @type {PyretFunction} */ onmessage) {
 
       /**
        * @typedef {{type: 'compile', options: unknown} | {type: 'info', options: unknown}} Queue

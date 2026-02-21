@@ -169,7 +169,7 @@ fun type-check(program :: A.Program, compile-env :: C.CompileEnvironment, post-c
   globvs = compile-env.globals.values
   globts = compile-env.globals.types
   shadow context = globvs.fold-keys(lam(g, shadow context):
-    if context.global-types.has-key(A.s-global(g).key()):
+    if context.global-types.has-key(A.s-global(A.dummy-loc, g).key()):
       context
     else:
       # TODO(joe): type-check vars by making them refs
@@ -177,12 +177,12 @@ fun type-check(program :: A.Program, compile-env :: C.CompileEnvironment, post-c
       if (g == "_"):
         context
       else:
-        context.set-global-types(context.global-types.set(A.s-global(g).key(), compile-env.global-value-value(g).t))
+        context.set-global-types(context.global-types.set(A.s-global(A.dummy-loc, g).key(), compile-env.global-value-value(g).t))
       end
     end
   end, context)
   shadow context = globts.fold-keys(lam(g, shadow context):
-    if context.aliases.has-key(A.s-type-global(g).key()):
+    if context.aliases.has-key(A.s-type-global(A.dummy-loc, g).key()):
       context
     else:
       origin = globts.get-value(g)
@@ -195,11 +195,11 @@ fun type-check(program :: A.Program, compile-env :: C.CompileEnvironment, post-c
               | none =>
                 cases(Option<Type>) provs.data-definitions.get(g):
                   | none => raise("Key " + g + " not found in " + torepr(provs))
-                  | some(v) => t-name(TS.builtin-uri, A.s-type-global(g), SL.builtin("global"), false)
+                  | some(v) => t-name(TS.builtin-uri, A.s-type-global(A.dummy-loc, g), SL.builtin("global"), false)
                 end
               | some(v) => v
             end
-            context.set-aliases(context.aliases.set(A.s-type-global(g).key(), t))
+            context.set-aliases(context.aliases.set(A.s-type-global(A.dummy-loc, g).key(), t))
           | none =>
             raise("Could not find module " + torepr(origin.uri-of-definition) + " in " + torepr(compile-env.all-modules) + " in " + torepr(program.l))
         end
@@ -1570,15 +1570,16 @@ fun synthesis-app-fun(app-loc :: Loc, _fun :: Expr, args :: List<Expr>, context 
   end
   cases(Expr) _fun:
     | s-id(fun-loc, id) =>
+      d = A.dummy-loc
       ask:
-        | id == A.s-global("_plus") then: choose-type("_plus")
-        | id == A.s-global("_times") then: choose-type("_times")
-        | id == A.s-global("_divide") then: choose-type("_divide")
-        | id == A.s-global("_minus") then: choose-type("_minus")
-        | id == A.s-global("_lessthan") then: choose-type("_lessthan")
-        | id == A.s-global("_lessequal") then: choose-type("_lessequal")
-        | id == A.s-global("_greaterthan") then: choose-type("_greaterthan")
-        | id == A.s-global("_greaterequal") then: choose-type("_greaterequal")
+        | id == A.s-global(d, "_plus") then: choose-type("_plus")
+        | id == A.s-global(d, "_times") then: choose-type("_times")
+        | id == A.s-global(d, "_divide") then: choose-type("_divide")
+        | id == A.s-global(d, "_minus") then: choose-type("_minus")
+        | id == A.s-global(d, "_lessthan") then: choose-type("_lessthan")
+        | id == A.s-global(d, "_lessequal") then: choose-type("_lessequal")
+        | id == A.s-global(d, "_greaterthan") then: choose-type("_greaterthan")
+        | id == A.s-global(d, "_greaterequal") then: choose-type("_greaterequal")
         | otherwise:
           synthesis(_fun, false, context).fold-bind(lam(_, new-type, shadow context):
             fold-result(new-type, context)
@@ -1815,7 +1816,7 @@ fun lam-to-type(coll :: SD.StringDict<Type>, l :: Loc, params :: List<A.Name>, a
     shadow context = context.add-variable(ret-type)
     fold-arg-types = map-fold-result(lam(arg, shadow context):
       arg-is-underscore = cases(A.Name) arg.id:
-        | s-atom(base, _) => base == "$underscore"
+        | s-atom(_, base, _) => base == "$underscore"
         | else => false
       end
       arg-type = coll.get-value(arg.id.key())
@@ -2400,7 +2401,7 @@ fun ignore-checker(l :: Loc, binds :: List<A.LetBind>, body :: Expr, blocky, con
   if binds.length() == 1:
     binding = binds.get(0)
     cases(A.Name) binding.b.id:
-      | s-atom(base, _) =>
+      | s-atom(_, base, _) =>
         if string-length(base) >= 19:
           name = string-substring(base, 0, 19)
           if name == "result-after-checks":

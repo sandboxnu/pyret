@@ -548,7 +548,7 @@ sharing:
             + ")"
         | t-var(id, _, _) =>
           cases(Name) id:
-            | s-atom(base, _) =>
+            | s-atom(_, base, _) =>
               if base == "%tyvar":
                 cases(Option<String>) tyvar-mapping.get-now(typ.key()) block:
                   | some(name) => name
@@ -592,7 +592,7 @@ check:
   t-forall([list: a-name, b-name], b-name, A.dummy-loc, false).to-string() is "forall a, b . b"
   t-ref(a-name, A.dummy-loc, false).to-string() is "ref a"
   t-data-refinement(a-name, "a", A.dummy-loc, false).to-string() is "(a % is-a)"
-  t-var(A.s-atom("%tyvar", 0), A.dummy-loc, false).to-string() is "A"
+  t-var(A.s-atom(A.dummy-loc, "%tyvar", 0), A.dummy-loc, false).to-string() is "A"
   t-var(A.s-name(A.dummy-loc, "a"), A.dummy-loc, false).to-string() is "a"
   t-existential(A.s-name(A.dummy-loc, "a"), A.dummy-loc, false).to-string() is "?-1"
 end
@@ -610,11 +610,11 @@ builtin-uri = module-uri("builtin://global")
 
 t-array-name = t-name(builtin-uri, A.s-type-global("RawArray"), A.dummy-loc, false)
 
-t-number  = lam(l): t-name(builtin-uri, A.s-type-global("Number"), l, false) end
-t-string  = lam(l): t-name(builtin-uri, A.s-type-global("String"), l, false) end
-t-boolean = lam(l): t-name(builtin-uri, A.s-type-global("Boolean"), l, false) end
-t-nothing = lam(l): t-name(builtin-uri, A.s-type-global("Nothing"), l, false) end
-t-srcloc  = lam(l): t-name(builtin-uri, A.s-type-global("Loc"), l, false) end
+t-number  = lam(l): t-name(builtin-uri, A.s-type-global(l, "Number"), l, false) end
+t-string  = lam(l): t-name(builtin-uri, A.s-type-global(l, "String"), l, false) end
+t-boolean = lam(l): t-name(builtin-uri, A.s-type-global(l, "Boolean"), l, false) end
+t-nothing = lam(l): t-name(builtin-uri, A.s-type-global(l, "Nothing"), l, false) end
+t-srcloc  = lam(l): t-name(builtin-uri, A.s-type-global(l, "Loc"), l, false) end
 t-array   = lam(v, l): t-app(t-array-name.set-loc(l), [list: v], l, false) end
-t-option  = lam(v, l): t-app(t-name(module-uri("builtin://option"), A.s-type-global("Option"), l, false), [list: v], l, false) end
-t-table = lam(l): t-name(builtin-uri, A.s-type-global("Table"), l, false) end
+t-option  = lam(v, l): t-app(t-name(module-uri("builtin://option"), A.s-type-global(l, "Option"), l, false), [list: v], l, false) end
+t-table = lam(l): t-name(builtin-uri, A.s-type-global(l, "Table"), l, false) end

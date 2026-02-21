@@ -150,12 +150,12 @@ end
 
 fun binding-type-env-from-env(env):
   for SD.fold-keys(acc from SD.make-string-dict(), name from env.globals.types):
-    acc.set(A.s-type-global(name).key(), e-bind(A.dummy-loc, false, b-typ))
+    acc.set(A.s-type-global(A.dummy-loc, name).key(), e-bind(A.dummy-loc, false, b-typ))
   end
 end
 fun binding-env-from-env(env):
   for SD.fold-keys(acc from SD.make-string-dict(), name from env.globals.values):
-    acc.set(A.s-global(name).key(), e-bind(A.dummy-loc, false, b-prim(name)))
+    acc.set(A.s-global(A.dummy-loc, name).key(), e-bind(A.dummy-loc, false, b-prim(name)))
   end
 end
 
@@ -897,8 +897,8 @@ strip-annotations-visitor = A.default-map-visitor.{
 
 fun make-renamer(replacements :: SD.StringDict):
   A.default-map-visitor.{
-    method s-atom(self, base, serial):
-      a = A.s-atom(base, serial)
+    method s-atom(self, l, base, serial):
+      a = A.s-atom(l, base, serial)
       k = a.key()
       if replacements.has-key(k):
         replacements.get-value(k)
@@ -990,7 +990,7 @@ fun ann-to-typ(a :: A.Ann, uri, compile-env) -> T.Type:
     | a-any(l) => T.t-top(l, false)
     | a-name(l, id) =>
       cases(A.Name) id:
-        | s-type-global(name) =>
+        | s-type-global(_, name) =>
           cases(Option<String>) compile-env.globals.types.get(name):
             | none =>
               raise("Name not found in globals.types: " + name)
@@ -998,7 +998,7 @@ fun ann-to-typ(a :: A.Ann, uri, compile-env) -> T.Type:
               # ```include from string-dict: type StringDict as SD end```
               T.t-name(T.module-uri(origin.uri-of-definition), origin.original-name, l, false)
           end
-        | s-atom(_, _) => T.t-name(T.module-uri(uri), id, l, false)
+        | s-atom(_, _, _) => T.t-name(T.module-uri(uri), id, l, false)
         | else => raise("Bad name found in ann-to-typ: " + id.key())
       end
     | a-type-var(l, id) =>
@@ -1458,7 +1458,7 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
   transformer = lam(t):
     cases(T.Type) t:
       | t-name(origin, name, l, inferred) =>
-        T.t-name(origin, A.s-type-global(name.toname()), l, inferred)
+        T.t-name(origin, A.s-type-global(l, name.toname()), l, inferred)
       | else => t
     end
   end
@@ -1546,3 +1546,19 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
       end
   end
 end
+
+
+# fun find-resolved-name-by-srcloc(resolved :: A.Program, srcloc :: Loc): Option<String>:
+#   var result-mangled-name = none
+#   visitor = A.default-iter-visitor.{
+#     method s-atom(self, l, base, serial):
+
+#     end,
+
+#     method s-global(self, ):
+#     end
+#   }
+
+  
+
+#   result-mangled-name
