@@ -33,6 +33,24 @@
 				"extensions": [
 					".arr"
 				],
+				"icon": {
+					"light": "./media/icons/pyret.svg",
+					"dark": "./media/icons/pyret.svg"
+				},
+				"configuration": "./language-configuration.json"
+			},
+			{
+				"id": "jarr",
+				"aliases": [
+					"jarr"
+				],
+				"extensions": [
+					".jarr"
+				],
+				"icon": {
+					"light": "./media/icons/jarr.svg",
+					"dark": "./media/icons/jarr.svg"
+				},
 				"configuration": "./language-configuration.json"
 			}
 		],
@@ -116,7 +134,7 @@
 		"@types/vscode": "^1.73.0",
 		"@typescript-eslint/eslint-plugin": "^7.14.0",
 		"@typescript-eslint/parser": "^7.14.0",
-		"@vscode/test-web": "^0.0.65",
+		"@vscode/test-web": "^0.0.79",
 		"@vscode/vsce": "^3.6.0",
 		"copy-webpack-plugin": "^13.0.0",
 		"eslint": "^8.26.0",
