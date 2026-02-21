@@ -262,7 +262,7 @@
         }
       }
       @constr-spec["s-global"]{
-        @members{@member-spec["s"]}
+        @members{@member-spec["l"] @member-spec["s"]}
         @with-members{
           @method-spec[
             "to-compiled-source"
@@ -297,7 +297,7 @@
         }
       }
       @constr-spec["s-type-global"]{
-        @members{@member-spec["s"]}
+        @members{@member-spec["l"] @member-spec["s"]}
         @with-members{
           @method-spec[
             "to-compiled-source"
@@ -332,7 +332,7 @@
         }
       }
       @constr-spec["s-atom"]{
-        @members{@member-spec["base"] @member-spec["serial"]}
+        @members{@member-spec["l"] @member-spec["base"] @member-spec["serial"]}
         @with-members{
           @method-spec[
             "to-compiled-source"

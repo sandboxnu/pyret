@@ -733,7 +733,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         { atom: atom, env: env }
       # NOTE(joe): an s-atom is pre-resolved to all its uses, so no need to add
       # it or do any more work.
-      | s-atom(_, _) =>
+      | s-atom(_, _, _) =>
         binding = make-binding(name)
         bindings.set-now(name.key(), binding)
         { atom: name, env: env }
@@ -788,8 +788,8 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
     for SD.each-key(name from initial.globals.types) block:
       origin = initial.globals.types.get-value(name)
       type-info = initial.type-by-origin-value(origin)
-      b = C.type-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), C.tb-type-let, names.s-type-global(name), C.tb-typ(type-info))
-      type-bindings.set-now(names.s-type-global(name).key(), b)
+      b = C.type-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), C.tb-type-let, names.s-type-global(A.dummy-loc, name), C.tb-typ(type-info))
+      type-bindings.set-now(names.s-type-global(A.dummy-loc, name).key(), b)
       acc.set-now(name, b)
     end
     acc.freeze()
@@ -800,8 +800,8 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
     for SD.each-key(name from initial.globals.modules) block:
       origin = initial.globals.modules.get-value(name)
       mod-info = initial.provides-by-origin-value(origin)
-      b = C.module-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), names.s-module-global(name), mod-info.modules.get-value(name))
-      module-bindings.set-now(names.s-module-global(name).key(), b)
+      b = C.module-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), names.s-module-global(A.dummy-loc, name), mod-info.modules.get-value(name))
+      module-bindings.set-now(names.s-module-global(A.dummy-loc, name).key(), b)
       acc.set-now(name, b)
     end
     acc.freeze()
@@ -837,9 +837,9 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         if env.has-key(s):
           env.get-value(s).atom
         else:
-          names.s-global(s)
+          names.s-global(l2, s)
         end
-      | s-atom(_, _) => id
+      | s-atom(_, _, _) => id
       | s-underscore(_) => id
       | else => raise("Wasn't expecting a non-s-name in resolve-names id: " + torepr(id))
     end
@@ -855,7 +855,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
             | tb-type-var => A.a-type-var(l, name)
           end
         else:
-          A.a-name(l, names.s-type-global(s))
+          A.a-name(l, names.s-type-global(l, s))
         end
       | else => A.a-name(l, id)
     end
@@ -1702,7 +1702,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
               when self.type-env.has-key(s) block:
                 name-errors := link(C.type-id-used-as-value(id, self.type-env.get-value(s).origin), name-errors)
               end
-              A.s-id(l2, names.s-global(s))
+              A.s-id(l2, names.s-global(l2, s))
             | some(vb) =>
               cases (C.ValueBinder) vb.binder:
                 | vb-let => A.s-id(l2, vb.atom)
@@ -1710,7 +1710,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
                 | vb-var => A.s-id-var(l2, vb.atom)
               end
           end
-        | s-atom(_, _) => A.s-id(l, id)
+        | s-atom(_, _, _) => A.s-id(l, id)
         | s-underscore(_) => A.s-id(l, id)
         | else => raise("Wasn't expecting a non-s-name in resolve-names id: " + torepr(id))
       end

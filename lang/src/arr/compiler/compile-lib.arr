@@ -24,6 +24,18 @@ import file("type-check.arr") as T
 import file("desugar-check.arr") as CH
 import file("resolve-scope.arr") as RS
 
+include from J:
+  data JExpr,
+  data JStmt,
+  data JCase,
+  data JBinop,
+  data JField,
+end
+
+include from E:
+  data Either
+end
+
 data CompilationPhase:
   | start(time :: Number)
   | phase(name :: String, result :: Any, time :: Number, prev :: CompilationPhase)
@@ -42,57 +54,6 @@ sharing:
   end
 end
 
-j-fun = J.j-fun
-j-var = J.j-var
-j-id = J.j-id
-j-method = J.j-method
-j-block = J.j-block
-j-true = J.j-true
-j-false = J.j-false
-j-num = J.j-num
-j-str = J.j-str
-j-return = J.j-return
-j-assign = J.j-assign
-j-if = J.j-if
-j-if1 = J.j-if1
-j-new = J.j-new
-j-app = J.j-app
-j-list = J.j-list
-j-obj = J.j-obj
-j-dot = J.j-dot
-j-bracket = J.j-bracket
-j-field = J.j-field
-j-dot-assign = J.j-dot-assign
-j-bracket-assign = J.j-bracket-assign
-j-try-catch = J.j-try-catch
-j-throw = J.j-throw
-j-expr = J.j-expr
-j-binop = J.j-binop
-j-and = J.j-and
-j-lt = J.j-lt
-j-eq = J.j-eq
-j-neq = J.j-neq
-j-geq = J.j-geq
-j-unop = J.j-unop
-j-decr = J.j-decr
-j-incr = J.j-incr
-j-not = J.j-not
-j-instanceof = J.j-instanceof
-j-ternary = J.j-ternary
-j-null = J.j-null
-j-parens = J.j-parens
-j-switch = J.j-switch
-j-case = J.j-case
-j-default = J.j-default
-j-label = J.j-label
-j-break = J.j-break
-j-while = J.j-while
-j-for = J.j-for
-
-
-left = E.left
-right = E.right
-type Either = E.Either
 
 mtd = [SD.string-dict:]
 
@@ -493,6 +454,97 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
   end
 end
 
+# really just taking in row col and URI
+# fun jump-to-def(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, options, loc :: S.Srcloc) -> {URI; S.Srcloc} block:
+#   doc: ```
+#     Invariant: provide-map maps dependency keys to URIs
+#     which ALL must be keys in modules.
+#   ```
+#   G.reset()
+#   A.global-names.reset()
+#   #print("Compiling module: " + locator.uri() + "\n")
+#   env = CS.compile-env(locator.get-globals(), modules, provide-map)
+#   #print("Module is being freshly compiled\n")
+#   shadow options = locator.get-options(options)
+#   libs = locator.get-extra-imports()
+#   mod = locator.get-module()
+#   ast = cases(PyretCode) mod:
+#     | pyret-string(module-string) =>
+#       P.surface-parse(module-string, locator.uri())
+#     | pyret-ast(module-ast) =>
+#       module-ast
+#   end
+#   var ret = start(time-now())
+#   fun add-phase(name, value) block:
+#     if options.collect-all:
+#       ret := phase(name, value, time-now(), ret)
+#     else if options.collect-times:
+#       ret := phase(name, nothing, time-now(), ret)
+#     else:
+#       nothing
+#     end
+#     value
+#   end
+#   ast-ended = AU.append-nothing-if-necessary(ast)
+#   add-phase("Added nothing", ast-ended)
+#   wf = W.check-well-formed(ast-ended)
+#   add-phase("Checked well-formedness", wf)
+#   checker = if not(options.checks == "none") and not(is-builtin-module(locator.uri())):
+#     CH.desugar-check
+#   else:
+#     CH.desugar-no-checks
+#   end
+#   cases(CS.CompileResult) wf block:
+#     | ok(_) =>
+#       wf-ast = AU.wrap-toplevels(wf.code)
+#       checked = checker(wf-ast)
+#       add-phase(if not(options.checks == "none"): "Desugared (with checks)" else: "Desugared (skipping checks)" end, checked)
+#       imported = AU.wrap-extra-imports(checked, libs)
+#       add-phase("Added imports", imported)
+#       scoped = RS.desugar-scope(imported, env)
+#       add-phase("Desugared scope", scoped)
+#       named-result = RS.resolve-names(scoped.ast, locator.uri(), env)
+#       any-errors = scoped.errors + named-result.errors
+#       if is-link(any-errors) block:
+#         right(any-errors)
+#       else:
+#         add-phase("Resolved names", named-result)
+#         spied =
+#           if options.enable-spies: named-result.ast
+#           else: named-result.ast.visit(A.default-map-visitor.{
+#                 method s-block(self, l, stmts):
+#                   A.s-block(l, stmts.foldr(lam(stmt, acc):
+#                         if A.is-s-spy-block(stmt): acc
+#                         else: link(stmt.visit(self), acc)
+#                         end
+#                       end, empty))
+#                 end
+#               })
+#           end
+#         provides = dummy-provides(locator.uri())
+#         # Once name resolution has happened, any newly-created s-binds must be added to bindings...
+#         desugared = D.desugar(spied)
+#         named-result.env.bindings.merge-now(desugared.new-binds)
+#         # ...in order to be checked for bad assignments here
+#         any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
+#         add-phase("Fully desugared", desugared.ast)
+#         if is-link(any-errors):
+#           left(any-errors)
+#         else: 
+#           cool-env = named-result.env
+#           right()
+#         end
+#       end
+#     | err(_) =>
+#       { module-as-string(dummy-provides(locator.uri()), env, CS.computed-none, wf) ;
+#         if options.collect-all or options.collect-times:
+#           phase("Result", wf, time-now(), ret).tolist()
+#         else: empty
+#         end }
+#   end
+  
+# end
+
 type PyretAnswer = Any
 type PyretMod = Any
 
@@ -569,11 +621,11 @@ fun make-standalone(wl, compiled, options):
 
   check-str = if not(options.check-mode): "none" else: options.checks end
 
-  runtime-options = J.j-obj(
+  runtime-options = j-obj(
     [C.clist:
-      J.j-field("checksFormat", j-str(options.checks-format)),
-      J.j-field("checks", j-str(check-str)),
-      J.j-field("disableAnnotationChecks",
+      j-field("checksFormat", j-str(options.checks-format)),
+      j-field("checks", j-str(check-str)),
+      j-field("disableAnnotationChecks",
         if options.runtime-annotations:
           j-false
         else:

@@ -2226,11 +2226,11 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
   global-binds = for CL.map_list(n from module-and-global-binds.is-false):
     { maybe-origin; which } =
       cases(A.Name) n:
-        | s-module-global(s) =>
+        | s-module-global(_, s) =>
           { env.origin-by-module-name(n.toname()); "modules"}
-        | s-global(s) =>
+        | s-global(_, s) =>
           { env.origin-by-value-name(n.toname()); "values"}
-        | s-type-global(s) =>
+        | s-type-global(_, s) =>
           { env.origin-by-type-name(n.toname()); "types"}
       end
 

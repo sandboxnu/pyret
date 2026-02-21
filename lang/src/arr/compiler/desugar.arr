@@ -24,8 +24,8 @@ end
 mt-d-env = d-env([tree-set: ], [tree-set: ], [tree-set: ])
 var generated-binds = SD.make-mutable-string-dict()
 
-fun g(id): A.s-global(id) end
-fun gid(l, id): A.s-id(l, g(id)) end
+fun g(l, id): A.s-global(l, id) end
+fun gid(l, id): A.s-id(l, g(l, id)) end
 fun bid(l, name): A.s-dot(l, A.s-prim-val(l, "builtins"), name) end
 
 flat-prim-app = A.prim-app-info-c(false)
@@ -278,7 +278,7 @@ fun ds-curry(l, f, args):
 where:
   d = A.dummy-loc
   n = A.s-global
-  id = lam(s): A.s-id(d, A.s-global(s)) end
+  id = lam(s): A.s-id(d, A.s-global(d, s)) end
   under = A.s-id(d, A.s-underscore(d))
   ds-ed = ds-curry(
       d,
@@ -699,7 +699,7 @@ fun desugar-expr(expr :: A.Expr):
                     | s-table-extend-reducer(shadow l, name, reducer-expr, _, _) =>
                       reducer = reducers.get-value(name)
                       acc = accs.get-value(name)
-                      nothing-expr = A.s-id(l, A.s-global("nothing"))
+                      nothing-expr = A.s-id(l, A.s-global(A.dummy-loc, "nothing"))
                       link(A.s-let-bind(l, reducer.id-b, desugar-expr(reducer-expr)),
                         link(A.s-var-bind(l, acc.id-b, nothing-expr),
                           reducers-acc))
@@ -784,7 +784,7 @@ fun desugar-expr(expr :: A.Expr):
                   flat-prim-app),
                 # Data
                 with-initialized-reducers(
-                  A.s-app(l, A.s-id(l, A.s-global("raw-array-map-1")), [list:
+                  A.s-app(l, A.s-id(l, A.s-global(A.dummy-loc, "raw-array-map-1")), [list:
                       data-pop-mapfun(true),
                       data-pop-mapfun(false),
                       A.s-dot(A.dummy-loc, tbl.id-e, "_rows-raw-array")]))], flat-prim-app)]), true)
@@ -894,7 +894,7 @@ fun desugar-expr(expr :: A.Expr):
     | s-table-filter(l, column-binds, predicate) =>
       row = mk-id(A.dummy-loc, "row")
       tbl = mk-id(l, "table")
-      pred-res = mk-id-ann(predicate.l, "pred", A.a-name(predicate.l, A.s-type-global("Boolean")))
+      pred-res = mk-id-ann(predicate.l, "pred", A.a-name(predicate.l, A.s-type-global(l, "Boolean")))
 
       columns =
         column-binds.binds.map(lam(c):
@@ -954,10 +954,9 @@ fun desugar-expr(expr :: A.Expr):
     | else => raise("NYI (desugar): " + torepr(expr))
   end
 where:
-  d = A.dummy-loc
   unglobal = A.default-map-visitor.{
-    method s-global(self, s): A.s-name(d, s) end,
-    method s-atom(self, base, serial): A.s-name(d, base) end
+    method s-global(self, l, s): A.s-name(l, s) end,
+    method s-atom(self, l, base, serial): A.s-name(l, base) end
   }
   p = lam(str): PP.surface-parse(str, "test").block.visit(A.dummy-loc-visitor) end
   ds = lam(prog): desugar-expr(prog).visit(unglobal).visit(A.dummy-loc-visitor) end
