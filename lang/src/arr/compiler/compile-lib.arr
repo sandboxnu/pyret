@@ -454,96 +454,100 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
   end
 end
 
-# really just taking in row col and URI
-# fun jump-to-def(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, options, loc :: S.Srcloc) -> {URI; S.Srcloc} block:
-#   doc: ```
-#     Invariant: provide-map maps dependency keys to URIs
-#     which ALL must be keys in modules.
-#   ```
-#   G.reset()
-#   A.global-names.reset()
-#   #print("Compiling module: " + locator.uri() + "\n")
-#   env = CS.compile-env(locator.get-globals(), modules, provide-map)
-#   #print("Module is being freshly compiled\n")
-#   shadow options = locator.get-options(options)
-#   libs = locator.get-extra-imports()
-#   mod = locator.get-module()
-#   ast = cases(PyretCode) mod:
-#     | pyret-string(module-string) =>
-#       P.surface-parse(module-string, locator.uri())
-#     | pyret-ast(module-ast) =>
-#       module-ast
-#   end
-#   var ret = start(time-now())
-#   fun add-phase(name, value) block:
-#     if options.collect-all:
-#       ret := phase(name, value, time-now(), ret)
-#     else if options.collect-times:
-#       ret := phase(name, nothing, time-now(), ret)
-#     else:
-#       nothing
-#     end
-#     value
-#   end
-#   ast-ended = AU.append-nothing-if-necessary(ast)
-#   add-phase("Added nothing", ast-ended)
-#   wf = W.check-well-formed(ast-ended)
-#   add-phase("Checked well-formedness", wf)
-#   checker = if not(options.checks == "none") and not(is-builtin-module(locator.uri())):
-#     CH.desugar-check
-#   else:
-#     CH.desugar-no-checks
-#   end
-#   cases(CS.CompileResult) wf block:
-#     | ok(_) =>
-#       wf-ast = AU.wrap-toplevels(wf.code)
-#       checked = checker(wf-ast)
-#       add-phase(if not(options.checks == "none"): "Desugared (with checks)" else: "Desugared (skipping checks)" end, checked)
-#       imported = AU.wrap-extra-imports(checked, libs)
-#       add-phase("Added imports", imported)
-#       scoped = RS.desugar-scope(imported, env)
-#       add-phase("Desugared scope", scoped)
-#       named-result = RS.resolve-names(scoped.ast, locator.uri(), env)
-#       any-errors = scoped.errors + named-result.errors
-#       if is-link(any-errors) block:
-#         right(any-errors)
-#       else:
-#         add-phase("Resolved names", named-result)
-#         spied =
-#           if options.enable-spies: named-result.ast
-#           else: named-result.ast.visit(A.default-map-visitor.{
-#                 method s-block(self, l, stmts):
-#                   A.s-block(l, stmts.foldr(lam(stmt, acc):
-#                         if A.is-s-spy-block(stmt): acc
-#                         else: link(stmt.visit(self), acc)
-#                         end
-#                       end, empty))
-#                 end
-#               })
-#           end
-#         provides = dummy-provides(locator.uri())
-#         # Once name resolution has happened, any newly-created s-binds must be added to bindings...
-#         desugared = D.desugar(spied)
-#         named-result.env.bindings.merge-now(desugared.new-binds)
-#         # ...in order to be checked for bad assignments here
-#         any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
-#         add-phase("Fully desugared", desugared.ast)
-#         if is-link(any-errors):
-#           left(any-errors)
-#         else: 
-#           cool-env = named-result.env
-#           right()
-#         end
-#       end
-#     | err(_) =>
-#       { module-as-string(dummy-provides(locator.uri()), env, CS.computed-none, wf) ;
-#         if options.collect-all or options.collect-times:
-#           phase("Result", wf, time-now(), ret).tolist()
-#         else: empty
-#         end }
-#   end
-  
-# end
+fun jump-to-def(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, options, line :: Number, col :: Number) -> E.Either<List<CS.CompileError>, {URI; S.Srcloc}> block:
+  doc: ```
+    Invariant: provide-map maps dependency keys to URIs
+    which ALL must be keys in modules.
+  ```
+  G.reset()
+  A.global-names.reset()
+  env = CS.compile-env(locator.get-globals(), modules, provide-map)
+  shadow options = locator.get-options(options)
+  libs = locator.get-extra-imports()
+  mod = locator.get-module()
+  ast = cases(PyretCode) mod:
+    | pyret-string(module-string) =>
+      P.surface-parse(module-string, locator.uri())
+    | pyret-ast(module-ast) =>
+      module-ast
+  end
+  var ret = start(time-now())
+  fun add-phase(name, value) block:
+    if options.collect-all:
+      ret := phase(name, value, time-now(), ret)
+    else if options.collect-times:
+      ret := phase(name, nothing, time-now(), ret)
+    else:
+      nothing
+    end
+    value
+  end
+  # check to make sure that the line and column actually correspond to a name
+  # which we must do before any desugaring (which adds in new names)
+  cases(Option) AU.find-name-at(ast, line, col) block:
+    | some(name) =>
+      ast-ended = AU.append-nothing-if-necessary(ast)
+      add-phase("Added nothing", ast-ended)
+      wf = W.check-well-formed(ast-ended)
+      add-phase("Checked well-formedness", wf)
+      checker = if not(options.checks == "none") and not(is-builtin-module(locator.uri())):
+        CH.desugar-check
+      else:
+        CH.desugar-no-checks
+      end
+      cases(CS.CompileResult) wf block:
+        | ok(_) =>
+          wf-ast = AU.wrap-toplevels(wf.code)
+          checked = checker(wf-ast)
+          add-phase(if not(options.checks == "none"): "Desugared (with checks)" else: "Desugared (skipping checks)" end, checked)
+          imported = AU.wrap-extra-imports(checked, libs)
+          add-phase("Added imports", imported)
+          scoped = RS.desugar-scope(imported, env)
+          add-phase("Desugared scope", scoped)
+          named-result = RS.resolve-names(scoped.ast, locator.uri(), env)
+          var any-errors = scoped.errors + named-result.errors
+          if is-link(any-errors) block:
+            left(any-errors)
+          else:
+            add-phase("Resolved names", named-result)
+            spied =
+              if options.enable-spies: named-result.ast
+              else: named-result.ast.visit(A.default-map-visitor.{
+                    method s-block(self, l, stmts):
+                      A.s-block(l, stmts.foldr(lam(stmt, acc):
+                            if A.is-s-spy-block(stmt): acc
+                            else: link(stmt.visit(self), acc)
+                            end
+                          end, empty))
+                    end
+                  })
+              end
+            provides = dummy-provides(locator.uri())
+            # Once name resolution has happened, any newly-created s-binds must be added to bindings...
+            desugared = D.desugar(spied)
+            named-result.env.bindings.merge-now(desugared.new-binds)
+            # ...in order to be checked for bad assignments here
+            any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
+            add-phase("Fully desugared", desugared.ast)
+            if is-link(any-errors):
+              left(any-errors)
+            else: 
+              cases(Option) AU.find-name-key-by-srcloc(named-result.ast, name.l):
+              | some(key) =>
+                cases(Option) named-result.env.bindings.get-now(key):
+                | some(vb) =>
+                  right({vb.origin.uri-of-definition; vb.origin.definition-bind-site})
+                | none => left([list:])
+                end
+              | none => left([list:])
+              end
+            end
+          end
+        | err(errors) => left(errors)
+      end
+    | none => left([list:])
+  end
+end
 
 type PyretAnswer = Any
 type PyretMod = Any
