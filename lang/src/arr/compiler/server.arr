@@ -42,6 +42,8 @@ fun compile(options):
     })
 end
 
+# TODO: hook upto jumpto def......
+
 fun serve(port, pyret-dir):
   S.make-server(port, lam(cmd, msg, send-message) block:
     # print("Got message in pyret-land: " + msg)
@@ -90,20 +92,24 @@ fun serve(port, pyret-dir):
     with-require-config = with-perilous.set("require-config",
       opts.get("require-config").or-else(P.resolve(P.join(pyret-dir, "config.json"))))
     ask:
-    | cmd == then:
-    result = run-task(lam():
-      compile(with-require-config)
-    end)
-    cases(E.Either) result block:
-      | right(exn) =>
-        err-str = RED.display-to-string(exn-unwrap(exn).render-reason(), tostring, empty)
-        err(err-str + "\n")
-        d = [SD.string-dict: "type", J.j-str("compile-failure")]
-        send-message(J.j-obj(d).serialize())
-      | left(val) =>
-        d = [SD.string-dict: "type", J.j-str("compile-success")]
-        send-message(J.j-obj(d).serialize())
-        nothing
+    | cmd == "compile" then:
+      result = run-task(lam():
+        compile(with-require-config)
+      end)
+      cases(E.Either) result block:
+        | right(exn) =>
+          err-str = RED.display-to-string(exn-unwrap(exn).render-reason(), tostring, empty)
+          err(err-str + "\n")
+          d = [SD.string-dict: "type", J.j-str("compile-failure")]
+          send-message(J.j-obj(d).serialize())
+        | left(val) =>
+          d = [SD.string-dict: "type", J.j-str("compile-success")]
+          send-message(J.j-obj(d).serialize())
+          nothing
+      end
+    | cmd == "info" then:
+      result = run-task(lam():
+      )
     end
   end)
 end

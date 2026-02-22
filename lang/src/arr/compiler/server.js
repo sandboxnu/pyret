@@ -89,9 +89,9 @@
           function tryQueue() {
             info(`Trying run queue, length is ${runQueue.length}`);
             if(runQueue.length > 0) {
-              const current = runQueue.pop()?;
+              const current = runQueue.pop();
               runtime.runThunk(function() {
-                return onmessage.app(current, respondForPy);
+                return onmessage.app(current?.command, current?.options, respondForPy);
               }, function(result) {
                 if(runtime.isFailureResult(result)) {
                   error("Failed: ", result.exn.exn, result.exn.stack, result.exn.pyretStack);

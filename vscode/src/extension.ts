@@ -19,15 +19,15 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  let serverModule = context.asAbsolutePath(
-    path.join("server", "out", "server.js"),
+  const serverModule = context.asAbsolutePath(
+    path.join("..", "..", "lsp-ts", "out", "server-node-tmp.js"),
   );
-  let debugOptions = { execArgv: ["--nolazy", "--inspect=6009"] };
-  let outputChannel = vscode.window.createOutputChannel(
+  const debugOptions = { execArgv: ["--nolazy", "--inspect=6009"] };
+  const outputChannel = vscode.window.createOutputChannel(
     "Pyret Language Server",
   );
 
-  let serverOptions: ServerOptions = {
+  const serverOptions: ServerOptions = {
     run: { module: serverModule, transport: TransportKind.ipc },
     debug: {
       module: serverModule,
@@ -36,7 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
   };
 
-  let clientOptions: LanguageClientOptions = {
+  const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "pyret" }],
     synchronize: {
       fileEvents: vscode.workspace.createFileSystemWatcher("**/*.arr"),
