@@ -11,8 +11,10 @@
     "watch": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
+    "@types/ws": "^8.18.1",
     "vscode-languageserver": "^9.0.1",
-    "vscode-languageserver-textdocument": "^1.0.12"
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

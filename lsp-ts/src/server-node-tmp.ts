@@ -11,6 +11,7 @@ import * as childProcess from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import WebSocket from 'ws';
 
 const connection = createConnection(ProposedFeatures.all);
 
@@ -108,8 +109,83 @@ connection.onShutdown(_params => {
 	shutdownPyretServer(portFile);
 });
 
-connection.onDefinition((params, token, workdown, result) => {
-	return { uri: params.textDocument.uri, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } } };
+interface JumpToDefSuccess {
+	uri: string;
+	startLine: number;
+	startColumn: number;
+	endLine: number;
+	endColumn: number;
+}
+
+function sendInfoRequest(portFile: string, filePath: string, line: number, col: number): Promise<JumpToDefSuccess | null> {
+	return new Promise((resolve, reject) => {
+		const client = new WebSocket('ws+unix://' + portFile);
+		let settled = false;
+
+		client.on('error', err => {
+			if (!settled) { settled = true; reject(err); }
+		});
+
+		client.on('open', () => {
+			const compileOptions = JSON.stringify({ program: filePath, line, col });
+			client.send(JSON.stringify({ command: 'info', compileOptions }));
+		});
+
+		client.on('message', (data: WebSocket.RawData) => {
+			const msg = JSON.parse(data.toString());
+			if (msg.type === 'jump-to-def-success') {
+				if (!settled) {
+					settled = true;
+					resolve({
+						uri: msg.uri,
+						startLine: msg['start-line'],
+						startColumn: msg['start-column'],
+						endLine: msg['end-line'],
+						endColumn: msg['end-column'],
+					});
+				}
+			} else if (msg.type === 'jump-to-def-failure') {
+				if (!settled) { settled = true; resolve(null); }
+			}
+			// ignore echo-log, echo-err, etc.
+		});
+
+		client.on('close', () => {
+			if (!settled) { settled = true; resolve(null); }
+		});
+	});
+}
+
+connection.onDefinition(async params => {
+	const portFile = getSocketPath();
+	if (!fs.existsSync(portFile)) {
+		connection.console.error('Pyret server not running, cannot jump to definition');
+		return null;
+	}
+
+	// LSP positions are 0-indexed; Pyret srclocs are 1-indexed
+	const line = params.position.line + 1;
+	const col = params.position.character + 1;
+
+	// Strip file:// scheme to get a plain file path
+	const fileUri = params.textDocument.uri;
+	const filePath = fileUri.startsWith('file://') ? decodeURIComponent(fileUri.slice(7)) : fileUri;
+
+	try {
+		const result = await sendInfoRequest(portFile, filePath, line, col);
+		if (!result) { return null; }
+
+		return {
+			uri: result.uri,
+			range: {
+				start: { line: result.startLine - 1, character: result.startColumn - 1 },
+				end:   { line: result.endLine   - 1, character: result.endColumn   - 1 },
+			},
+		};
+	} catch (err) {
+		connection.console.error(`jump-to-def error: ${err}`);
+		return null;
+	}
 });
 
 const documents = new TextDocuments(TextDocument);
