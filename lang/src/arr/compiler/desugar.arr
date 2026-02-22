@@ -138,13 +138,13 @@ fun desugar(program :: A.Program):
 end
 
 fun mk-id-ann(loc, base, ann) block:
-  a = names.make-atom(base)
+  a = names.make-atom(loc, base)
   generated-binds.set-now(a.key(), C.value-bind(C.bo-local(loc, a), C.vb-let, a, ann))
   { id: a, id-b: A.s-bind(loc, false, a, ann), id-e: A.s-id(loc, a) }
 end
 
 fun mk-id-var-ann(loc, base, ann) block:
-  a = names.make-atom(base)
+  a = names.make-atom(loc, base)
   generated-binds.set-now(a.key(), C.value-bind(C.bo-local(loc, a), C.vb-var, a, ann))
   { id: a, id-b: A.s-bind(loc, false, a, ann), id-e: A.s-id-var(loc, a) }
 end
@@ -954,6 +954,7 @@ fun desugar-expr(expr :: A.Expr):
     | else => raise("NYI (desugar): " + torepr(expr))
   end
 where:
+  d = A.dummy-loc
   unglobal = A.default-map-visitor.{
     method s-global(self, l, s): A.s-name(l, s) end,
     method s-atom(self, l, base, serial): A.s-name(l, base) end

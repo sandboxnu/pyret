@@ -18,7 +18,7 @@ names = A.global-names
 flat-prim-app = A.prim-app-info-c(false)
 
 fun mk-id(loc, base):
-  t = names.make-atom(base)
+  t = names.make-atom(loc, base)
   { id: t, id-b: bind(loc, t), id-e: N.a-id(loc, t) }
 end
 
@@ -325,7 +325,7 @@ fun anf(e :: A.Expr, k :: ANFCont) -> N.AExpr:
     | s-tuple-get(l, tup, index, index-loc) => 
        anf-name(tup, "anf_tuple_get", lam(v): k(N.a-tuple-get(l, v, index)) end)
     | s-array(l, values) =>
-      array-id = names.make-atom("anf_array")
+      array-id = names.make-atom(l, "anf_array")
       N.a-let(
         l,
         bind(l, array-id),
@@ -354,7 +354,7 @@ fun anf(e :: A.Expr, k :: ANFCont) -> N.AExpr:
               | a-blank => A.s-let-expr(l, let-binds, body, blocky)
               | a-any(_) => A.s-let-expr(l, let-binds, body, blocky)
               | else =>
-                a = A.global-names.make-atom("inline_body")
+                a = A.global-names.make-atom(l, "inline_body")
                 A.s-let-expr(l,
                   let-binds
                     + [list: A.s-let-bind(body.l, A.s-bind(l, false, a, ann), body)],

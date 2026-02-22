@@ -19,7 +19,7 @@ desugar-visitor = A.default-map-visitor.{
     A.s-prim-app(l, "throwUnfinishedTemplate", [list: A.s-srcloc(l, l)], flat-prim-app)
   end,
   method s-cases-else(self, l, typ, val, branches, els, blocky):
-    name = A.global-names.make-atom("cases")
+    name = A.global-names.make-atom(l, "cases")
     typ-compiled = typ.visit(self)
     val-exp = val.visit(self)
     val-id = A.s-id(l, name)
@@ -28,7 +28,7 @@ desugar-visitor = A.default-map-visitor.{
         els.visit(self), true), false)
   end,
   method s-cases(self, l, typ, val, branches, blocky):
-    name = A.global-names.make-atom("cases")
+    name = A.global-names.make-atom(l, "cases")
     typ-compiled = typ.visit(self)
     val-exp = val.visit(self)
     val-id = A.s-id(l, name)
@@ -37,7 +37,7 @@ desugar-visitor = A.default-map-visitor.{
         A.s-block(l, [list: no-cases-exn(l, val-id)]), true), false)
   end,
   method s-check(self, l, name, body, keyword-check):
-    A.s-id(l, A.s-global("nothing"))
+    A.s-id(l, A.s-global(l, "nothing"))
   end
 }
 

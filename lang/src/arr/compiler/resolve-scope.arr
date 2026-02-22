@@ -45,7 +45,7 @@ fun desugar-toplevel-types(stmts :: List<A.Expr>) -> List<A.Expr> block:
       | s-newtype(l, name, namet) =>
         rev-type-binds := link(A.s-newtype-bind(l, name, namet), rev-type-binds)
       | s-data(l, name, params, mixins, variants, shared, _check-loc, _check) =>
-        namet = names.make-atom(name)
+        namet = names.make-atom(l, name)
         rev-type-binds := link(A.s-newtype-bind(l, A.s-name(l, name), namet), rev-type-binds)
         rev-stmts := link(A.s-data-expr(l, name, namet, params, mixins, variants, shared, _check-loc, _check), rev-stmts)
       | else =>
@@ -263,7 +263,7 @@ fun simplify-let-bind(rebuild, l, bind, expr, lbs :: List<A.LetBind>) -> List<A.
     | s-tuple-bind(lb, fields, as-name) =>
       {bound-expr; binding} = cases(Option) as-name:
         | none =>
-          name = names.make-atom("tup")
+          name = names.make-atom(lb, "tup")
           ann = A.a-tuple(lb, for map(f from fields):
               cases(A.Bind) f:
                 | s-bind(_, _, _, a) => a
@@ -383,7 +383,7 @@ fun desugar-scope-block(stmts :: List<A.Expr>, binding-group :: BindingGroup) ->
               A.s-letrec-bind(v.l, b(v.l, checker-name), get-part(checker-name))
             ]
           end
-          blob-id = names.make-atom(name)
+          blob-id = names.make-atom(l, name)
           data-expr = A.s-data-expr(l, name, namet, params, mixins, variants, shared, _check-loc, _check)
           bind-data = A.s-letrec-bind(l, bn(l, blob-id), data-expr)
           bind-data-pred = A.s-letrec-bind(l, b(l, A.make-checker-name(name)), A.s-dot(l, A.s-id-letrec(l, blob-id, true), name))
@@ -689,7 +689,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
   datatypes = SD.make-mutable-string-dict()
 
   fun make-anon-import-for(l, s, env, shadow bindings, b) block:
-    atom = names.make-atom(s)
+    atom = names.make-atom(l, s)
     bindings.set-now(atom.key(), b(atom))
     { atom: atom, env: env }
   end
@@ -723,12 +723,12 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         #     origin: env.get-value(s)
         #   end
         # end
-        atom = names.make-atom(s)
+        atom = names.make-atom(l, s)
         binding = make-binding(atom)
         bindings.set-now(atom.key(), binding)
         { atom: atom, env: env.set(s, binding) }
       | s-underscore(l) =>
-        atom = names.make-atom("$underscore")
+        atom = names.make-atom(l, "$underscore")
         bindings.set-now(atom.key(), make-binding(atom))
         { atom: atom, env: env }
       # NOTE(joe): an s-atom is pre-resolved to all its uses, so no need to add
@@ -769,13 +769,13 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         | some(shadow val-info) =>
           cases(C.ValueExport) val-info block:
             | v-var(_, t) =>
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(name), A.a-blank)
-              bindings.set-now(names.s-global(name).key(), b)
+              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(A.dummy-loc, name), A.a-blank)
+              bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
               acc.set-now(name, b)
             | else =>
               # TODO(joe): Good place to add _location_ to valueexport to report errs better
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(name), A.a-blank)
-              bindings.set-now(names.s-global(name).key(), b)
+              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(A.dummy-loc, name), A.a-blank)
+              bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
               acc.set-now(name, b)
           end
       end
@@ -1054,14 +1054,14 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         new-header = A.s-import(l, file, atom-env-m.atom)
         { imp-e; imp-te; atom-env-m.env; link(new-header, imp-imps) }
       | s-import-fields(l, fields, file) =>
-        synth-include-name = names.make-atom(include-name())
+        synth-include-name = names.make-atom(l, include-name())
         updated = add-import(acc, A.s-import(l, file, synth-include-name))
         add-import(updated, A.s-include-from(l, [list: synth-include-name],
           fields.map(lam(f):
             A.s-include-name(l, A.s-module-ref(l, [list: f], none))
           end)))
       | s-include(l, file) =>
-        synth-include-name = names.make-atom(include-name())
+        synth-include-name = names.make-atom(l, include-name())
         updated = add-import(acc, A.s-import(l, file, synth-include-name))
         add-import(updated, A.s-include-from(l, [list: synth-include-name],
           [list:
