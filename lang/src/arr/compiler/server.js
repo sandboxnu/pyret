@@ -94,9 +94,16 @@
                 return onmessage.app(current?.command, current?.options, respondForPy);
               }, function(result) {
                 if(runtime.isFailureResult(result)) {
-                  error("Failed: ", result.exn.exn, result.exn.stack, result.exn.pyretStack);
-                  respondJSON({type: "echo-err", contents: "There was an internal error, please report this as a bug"});
-                  respondJSON({type: "echo-err", contents: String(result.exn.exn) });
+                  const exn = result.exn;
+                  const inner = exn && exn.exn !== undefined ? exn.exn : exn;
+                  error("Failed (raw exn):", inner);
+                  error("Failed (stack):", exn && exn.stack);
+                  error("Failed (pyretStack):", exn && exn.pyretStack);
+                  const exnStr = inner !== undefined
+                    ? (typeof inner === 'object' ? JSON.stringify(inner) : String(inner))
+                    : String(exn);
+                  respondJSON({type: "echo-err", contents: "Internal error: " + exnStr});
+                  if(exn && exn.stack) { respondJSON({type: "echo-err", contents: exn.stack}); }
                   connection.close();
                   // restarter.error(result.exn);
                 }

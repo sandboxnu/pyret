@@ -146,8 +146,11 @@ function sendInfoRequest(portFile: string, filePath: string, line: number, col: 
 				}
 			} else if (msg.type === 'jump-to-def-failure') {
 				if (!settled) { settled = true; resolve(null); }
+			} else if (msg.type === 'echo-err') {
+				connection.console.error('[pyret jump-to-def] ' + msg.contents);
+			} else if (msg.type === 'echo-log') {
+				connection.console.log('[pyret jump-to-def] ' + msg.contents);
 			}
-			// ignore echo-log, echo-err, etc.
 		});
 
 		client.on('close', () => {

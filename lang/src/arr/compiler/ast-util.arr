@@ -1583,7 +1583,7 @@ fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.N
         | builtin(_) => true
         | srcloc(_, sl, sc, _, el, ec, _) =>
           if (sl <= line) and (line <= el) and (sc <= col) and (col <= ec) block:
-            result-name := some(self)
+            result-name := some(A.s-name(l, s))
             false
           else:
             true
