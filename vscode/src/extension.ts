@@ -1,55 +1,67 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import { PyretCPOWebProvider, makeCommandHandler } from './pyretCPOWebEditor';
+import * as vscode from "vscode";
+import * as path from "path";
+import { PyretCPOWebProvider, makeCommandHandler } from "./pyretCPOWebEditor";
 import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  TransportKind
-} from 'vscode-languageclient/node';
+  TransportKind,
+} from "vscode-languageclient/node";
 
 let client: LanguageClient;
 
 export function activate(context: vscode.ExtensionContext) {
-	context.subscriptions.push(PyretCPOWebProvider.register(context));
-    context.subscriptions.push(vscode.commands.registerCommand("pyret-parley.run-file", makeCommandHandler(context)));
+  context.subscriptions.push(PyretCPOWebProvider.register(context));
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "pyret-parley.run-file",
+      makeCommandHandler(context),
+    ),
+  );
 
-  let serverModule = context.asAbsolutePath(path.join('server', 'out', 'server.js'));
-  let debugOptions = { execArgv: ['--nolazy', '--inspect=6009'] };
-  let outputChannel = vscode.window.createOutputChannel('Pyret Language Server');
+  const serverModule = context.asAbsolutePath(
+    path.join("..", "lsp-ts", "out", "server-node-tmp.js"),
+  );
+  const debugOptions = { execArgv: ["--nolazy", "--inspect=6009"] };
+  const outputChannel = vscode.window.createOutputChannel(
+    "Pyret Server",
+  );
+  const traceOutputChannel = vscode.window.createOutputChannel(
+    "Pyret Language Server",
+  );
 
-  let serverOptions: ServerOptions = {
+  const serverOptions: ServerOptions = {
     run: { module: serverModule, transport: TransportKind.ipc },
     debug: {
       module: serverModule,
       transport: TransportKind.ipc,
-      options: debugOptions
-    }
+      options: debugOptions,
+    },
   };
 
-  let clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: 'file', language: 'pyret' }],
+  const clientOptions: LanguageClientOptions = {
+    documentSelector: [{ scheme: "file", language: "pyret" }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.arr')
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.arr"),
     },
     outputChannel: outputChannel,
-    traceOutputChannel: outputChannel
+    traceOutputChannel: traceOutputChannel,
   };
 
   client = new LanguageClient(
-    'pyretLanguageServer',
-    'Pyret Language Server',
+    "pyret",
+    "Pyret Language Server",
     serverOptions,
-    clientOptions
+    clientOptions,
   );
 
   client.start();
-  outputChannel.appendLine('Pyret Language Server started');
+  outputChannel.appendLine("Pyret Language Server started");
 }
 
 export function deactivate(): Thenable<void> | undefined {
-    if (!client) {
-        return undefined;
-    }
-    return client.stop();
+  if (!client) {
+    return undefined;
+  }
+  return client.stop();
 }

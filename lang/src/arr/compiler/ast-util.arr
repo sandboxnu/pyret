@@ -1551,18 +1551,44 @@ end
 fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: Loc) -> Option<String> block:
   var result-mangled-name = none
   visitor = A.default-iter-visitor.{
-    method s-atom(self, l, base, serial):
+    # Use sites: s-id(use-l, atom/global) — match on the outer l, return inner key
+    method s-id(self, l, id):
       if l == srcloc block:
-        result-mangled-name := some(self.key())
+        result-mangled-name := some(id.key())
         false
       else:
         true
       end
     end,
-
+    method s-id-var(self, l, id):
+      if l == srcloc block:
+        result-mangled-name := some(id.key())
+        false
+      else:
+        true
+      end
+    end,
+    method s-id-letrec(self, l, id, safe):
+      if l == srcloc block:
+        result-mangled-name := some(id.key())
+        false
+      else:
+        true
+      end
+    end,
+    # Binding sites: s-atom/s-global appear directly with bind-l — only match
+    # if the user clicked exactly on a binding site (rare but possible)
+    method s-atom(self, l, base, serial):
+      if l == srcloc block:
+        result-mangled-name := some(A.s-atom(l, base, serial).key())
+        false
+      else:
+        true
+      end
+    end,
     method s-global(self, l, s):
       if l == srcloc block:
-        result-mangled-name := some(self.key())
+        result-mangled-name := some(A.s-global(l, s).key())
         false
       else:
         true
@@ -1583,7 +1609,7 @@ fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.N
         | builtin(_) => true
         | srcloc(_, sl, sc, _, el, ec, _) =>
           if (sl <= line) and (line <= el) and (sc <= col) and (col <= ec) block:
-            result-name := some(self)
+            result-name := some(A.s-name(l, s))
             false
           else:
             true
