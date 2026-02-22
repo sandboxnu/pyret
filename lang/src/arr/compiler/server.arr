@@ -43,7 +43,7 @@ fun compile(options):
 end
 
 fun serve(port, pyret-dir):
-  S.make-server(port, lam(msg, send-message) block:
+  S.make-server(port, lam(cmd, msg, send-message) block:
     # print("Got message in pyret-land: " + msg)
     opts = J.read-json(msg).native()
     # print(torepr(opts))
@@ -89,6 +89,8 @@ fun serve(port, pyret-dir):
       end
     with-require-config = with-perilous.set("require-config",
       opts.get("require-config").or-else(P.resolve(P.join(pyret-dir, "config.json"))))
+    ask:
+    | cmd == then:
     result = run-task(lam():
       compile(with-require-config)
     end)

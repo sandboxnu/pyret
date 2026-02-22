@@ -8,10 +8,10 @@
   requires: [],
   nativeRequires: ['http', 'ws', 'fs'],
   theModule: function(
-    runtime, 
-    _, 
-    uri, 
-    /** @type {import('node:http')} */ http, 
+    runtime,
+    _,
+    uri,
+    /** @type {import('node:http')} */ http,
     ws,
     /** @type {import('node:fs')} */ fs,
   ) {
@@ -42,7 +42,7 @@
     const makeServer = function(/** @type {string} */ port, /** @type {PyretFunction} */ onmessage) {
 
       /**
-       * @typedef {{type: 'compile', options: unknown} | {type: 'info', options: unknown}} Queue
+       * @typedef {{command: 'compile', options: unknown} | {command: 'info', options: unknown}} Queue
        */
 
       /** @type {Queue[]} */
@@ -89,9 +89,7 @@
           function tryQueue() {
             info(`Trying run queue, length is ${runQueue.length}`);
             if(runQueue.length > 0) {
-              // TODO: thread through the `type` field to server.arr.
-              // TODO: be smart about queries?
-              const current = runQueue.pop()?.options;
+              const current = runQueue.pop()?;
               runtime.runThunk(function() {
                 return onmessage.app(current, respondForPy);
               }, function(result) {
@@ -111,7 +109,7 @@
             }
           }
 
-          
+
           info(`${new Date()} Connection accepted.`);
 
 
@@ -147,7 +145,7 @@
               }
               case "compile":
               case "info": {
-                runQueue.push({type: parsed.command, options: parsed.compileOptions});
+                runQueue.push({command: parsed.command, options: parsed.compileOptions});
                 tryQueue();
                 break;
               }
@@ -157,7 +155,7 @@
             // info((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
           });
         });
-        
+
         info("Server startup successful");
         if(process.send) {
           process.send({type: 'success'});
