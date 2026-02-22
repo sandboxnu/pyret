@@ -122,7 +122,7 @@ fun serve(port, pyret-dir):
           compiled-read-only: options.get-value("compiled-read-only"),
           display-progress: false,
           log: lam(s, _): nothing end,
-          log-error: lam(s): nothing end,
+          log-error: err,
         }
         base-module = CS.dependency("file", [list: program])
         base = CLI.module-finder({
@@ -157,6 +157,7 @@ fun serve(port, pyret-dir):
         | left(jump-result) =>
           cases(E.Either) jump-result block:
             | left(errors) =>
+              err("jump-to-def: no result (errors: " + torepr(errors) + ")\n")
               d = [SD.string-dict: "type", J.j-str("jump-to-def-failure")]
               send-message(J.j-obj(d).serialize())
             | right(loc-info) =>

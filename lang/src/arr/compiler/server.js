@@ -42,11 +42,38 @@
     const makeServer = function(/** @type {string} */ port, /** @type {PyretFunction} */ onmessage) {
 
       /**
-       * @typedef {{command: 'compile', options: unknown} | {command: 'info', options: unknown}} Queue
+       * @typedef {{command: string, options: unknown, respond: function, respondJSON: function, closeConn: function}} QueueItem
        */
 
-      /** @type {Queue[]} */
+      /** @type {QueueItem[]} */
       let runQueue = [];
+      let running = false;
+
+      function tryQueue() {
+        if (running || runQueue.length === 0) { return; }
+        running = true;
+        const current = runQueue.shift();
+        info(`Running queued command: ${current.command}, queue length now ${runQueue.length}`);
+        runtime.runThunk(function() {
+          return onmessage.app(current.command, current.options, current.respondForPy);
+        }, function(result) {
+          if (runtime.isFailureResult(result)) {
+            const exn = result.exn;
+            const inner = exn && exn.exn !== undefined ? exn.exn : exn;
+            error("Failed (raw exn):", inner);
+            error("Failed (stack):", exn && exn.stack);
+            error("Failed (pyretStack):", exn && exn.pyretStack);
+            const exnStr = inner !== undefined
+              ? (typeof inner === 'object' ? JSON.stringify(inner) : String(inner))
+              : String(exn);
+            current.respondJSON({type: "echo-err", contents: "Internal error: " + exnStr});
+            if (exn && exn.stack) { current.respondJSON({type: "echo-err", contents: exn.stack}); }
+          }
+          current.closeConn();
+          running = false;
+          tryQueue();
+        });
+      }
 
       //info("Starting up server");
       return runtime.pauseStack(function(restarter) {
@@ -85,36 +112,7 @@
           }
           function respondJSON(json) { return respond(JSON.stringify(json)); }
           const respondForPy = runtime.makeFunction(respond, "respond");
-
-          function tryQueue() {
-            info(`Trying run queue, length is ${runQueue.length}`);
-            if(runQueue.length > 0) {
-              const current = runQueue.pop();
-              runtime.runThunk(function() {
-                return onmessage.app(current?.command, current?.options, respondForPy);
-              }, function(result) {
-                if(runtime.isFailureResult(result)) {
-                  const exn = result.exn;
-                  const inner = exn && exn.exn !== undefined ? exn.exn : exn;
-                  error("Failed (raw exn):", inner);
-                  error("Failed (stack):", exn && exn.stack);
-                  error("Failed (pyretStack):", exn && exn.pyretStack);
-                  const exnStr = inner !== undefined
-                    ? (typeof inner === 'object' ? JSON.stringify(inner) : String(inner))
-                    : String(exn);
-                  respondJSON({type: "echo-err", contents: "Internal error: " + exnStr});
-                  if(exn && exn.stack) { respondJSON({type: "echo-err", contents: exn.stack}); }
-                  connection.close();
-                  // restarter.error(result.exn);
-                }
-                else {
-                  connection.close();
-                  // info("Success: ", result);
-                }
-                tryQueue();
-              });
-            }
-          }
+          function closeConn() { connection.close(); }
 
 
           info(`${new Date()} Connection accepted.`);
@@ -152,7 +150,7 @@
               }
               case "compile":
               case "info": {
-                runQueue.push({command: parsed.command, options: parsed.compileOptions});
+                runQueue.push({command: parsed.command, options: parsed.compileOptions, respondForPy, respondJSON, closeConn});
                 tryQueue();
                 break;
               }

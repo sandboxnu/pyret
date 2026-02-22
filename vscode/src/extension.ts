@@ -46,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   client = new LanguageClient(
-    "pyretLanguageServer",
+    "pyret",
     "Pyret Language Server",
     serverOptions,
     clientOptions,

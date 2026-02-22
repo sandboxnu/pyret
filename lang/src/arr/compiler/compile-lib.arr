@@ -484,8 +484,10 @@ fun jump-to-def(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, 
   end
   # check to make sure that the line and column actually correspond to a name
   # which we must do before any desugaring (which adds in new names)
+  options.log-error("[jump-to-def] querying line=" + tostring(line) + " col=" + tostring(col) + " uri=" + locator.uri() + "\n")
   cases(Option) AU.find-name-at(ast, line, col) block:
     | some(name) =>
+      options.log-error("[jump-to-def] found name: " + torepr(name) + " at " + name.l.format(true) + "\n")
       ast-ended = AU.append-nothing-if-necessary(ast)
       add-phase("Added nothing", ast-ended)
       wf = W.check-well-formed(ast-ended)
@@ -507,6 +509,7 @@ fun jump-to-def(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, 
           named-result = RS.resolve-names(scoped.ast, locator.uri(), env)
           var any-errors = scoped.errors + named-result.errors
           if is-link(any-errors) block:
+            options.log-error("[jump-to-def] scope/resolution errors: " + torepr(any-errors) + "\n")
             left(any-errors)
           else:
             add-phase("Resolved names", named-result)
@@ -529,23 +532,33 @@ fun jump-to-def(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, 
             # ...in order to be checked for bad assignments here
             any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
             add-phase("Fully desugared", desugared.ast)
-            if is-link(any-errors):
+            if is-link(any-errors) block:
+              options.log-error("[jump-to-def] unbound/bad-assignment errors: " + torepr(any-errors) + "\n")
               left(any-errors)
             else: 
-              cases(Option) AU.find-name-key-by-srcloc(named-result.ast, name.l):
+              cases(Option) AU.find-name-key-by-srcloc(named-result.ast, name.l) block:
               | some(key) =>
-                cases(Option) named-result.env.bindings.get-now(key):
+                options.log-error("[jump-to-def] found key: " + key + "\n")
+                cases(Option) named-result.env.bindings.get-now(key) block:
                 | some(vb) =>
                   right({vb.origin.uri-of-definition; vb.origin.definition-bind-site})
-                | none => left([list:])
+                | none =>
+                  options.log-error("[jump-to-def] no binding for key: " + key + "\n")
+                  left([list:])
                 end
-              | none => left([list:])
+              | none =>
+                options.log-error("[jump-to-def] find-name-key-by-srcloc returned none for srcloc: " + name.l.format(true) + "\n")
+                left([list:])
               end
             end
           end
-        | err(errors) => left(errors)
+        | err(errors) =>
+          options.log-error("[jump-to-def] well-formedness errors: " + torepr(errors) + "\n")
+          left(errors)
       end
-    | none => left([list:])
+    | none =>
+      options.log-error("[jump-to-def] find-name-at returned none for line=" + tostring(line) + " col=" + tostring(col) + "\n")
+      left([list:])
   end
 end
 
