@@ -1548,17 +1548,28 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
 end
 
 
-# fun find-resolved-name-by-srcloc(resolved :: A.Program, srcloc :: Loc): Option<String>:
-#   var result-mangled-name = none
-#   visitor = A.default-iter-visitor.{
-#     method s-atom(self, l, base, serial):
+fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: Loc) -> Option<String> block:
+  var result-mangled-name = none
+  visitor = A.default-iter-visitor.{
+    method s-atom(self, l, base, serial):
+      if l == srcloc block:
+        result-mangled-name := some(self.key())
+        false
+      else:
+        true
+      end
+    end,
 
-#     end,
+    method s-global(self, l, s):
+      if l == srcloc block:
+        result-mangled-name := some(self.key())
+        false
+      else:
+        true
+      end
+    end
+  }
 
-#     method s-global(self, ):
-#     end
-#   }
-
-  
-
-#   result-mangled-name
+  resolved.visit(visitor)
+  result-mangled-name
+end
