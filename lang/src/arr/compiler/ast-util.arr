@@ -1573,3 +1573,27 @@ fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: Loc) -> Option<Stri
   resolved.visit(visitor)
   result-mangled-name
 end
+
+is-s-name = A.is-s-name
+fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.Name%(is-s-name)> block:
+  var result-name = none
+  visitor = A.default-iter-visitor.{
+    method s-name(self, l, s):
+      cases (Loc) l:
+        | builtin(_) => true
+        | srcloc(_, sl, sc, _, el, ec, _) =>
+          if (sl <= line) and (line <= el) and (sc <= col) and (col <= ec) block:
+            result-name := some(self)
+            false
+          else:
+            true
+          end
+      end
+    end
+  }
+
+  prog.visit(visitor)
+  result-name
+end
+
+
