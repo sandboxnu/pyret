@@ -823,7 +823,7 @@ fun desugar-expr(expr :: A.Expr):
             # Header
             A.s-dot(A.dummy-loc, tbl.id-e, "_header-raw-array"),
             # Data
-            A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-map")), [list:
+            A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-map")), [list:
                 A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
                   A.s-let-expr(A.dummy-loc,
                     link(
@@ -862,7 +862,7 @@ fun desugar-expr(expr :: A.Expr):
           # Header
           A.s-array(A.dummy-loc,  columns.map(_.name)),
           # Data
-          A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-map")), [list:
+          A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-map")), [list:
             A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
               A.s-array(A.dummy-loc,
                 columns.map(lam(c):
@@ -880,7 +880,7 @@ fun desugar-expr(expr :: A.Expr):
           get-table-column(l, table.l, tbl.id-e, {l: column.l, name: A.s-str(A.dummy-loc,column.s)}))],
         # Table Construction
         A.s-prim-app(A.dummy-loc, "raw_array_to_list", [list:
-          A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-map")), [list:
+          A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-map")), [list:
             A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
               A.s-prim-app(A.dummy-loc, "raw_array_get", [list: row.id-e, col.id-e], flat-prim-app), none, none, true),
              A.s-dot(A.dummy-loc, tbl.id-e, "_rows-raw-array")])], flat-prim-app), true)
@@ -916,7 +916,7 @@ fun desugar-expr(expr :: A.Expr):
             # Header
             A.s-dot(A.dummy-loc, tbl.id-e, "_header-raw-array"),
             # Data
-            A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-filter")), [list:
+            A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-filter")), [list:
                 A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
                   A.s-let-expr(A.dummy-loc,
                     columns.map(lam(column):
