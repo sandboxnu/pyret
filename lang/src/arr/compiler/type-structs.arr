@@ -598,17 +598,17 @@ check:
 end
 
 fun new-existential(l :: Loc, inferred :: Boolean):
-  t-existential(A.global-names.make-atom("%exists"), l, inferred)
+  t-existential(A.global-names.make-atom(l, "%exists"), l, inferred)
 end
 
 fun new-type-var(l :: Loc):
-  t-var(A.global-names.make-atom("%tyvar"), l, false)
+  t-var(A.global-names.make-atom(l, "%tyvar"), l, false)
 end
 
 # TODO(MATT): which of these should be kept
 builtin-uri = module-uri("builtin://global")
 
-t-array-name = t-name(builtin-uri, A.s-type-global("RawArray"), A.dummy-loc, false)
+t-array-name = t-name(builtin-uri, A.s-type-global(A.dummy-loc, "RawArray"), A.dummy-loc, false)
 
 t-number  = lam(l): t-name(builtin-uri, A.s-type-global(l, "Number"), l, false) end
 t-string  = lam(l): t-name(builtin-uri, A.s-type-global(l, "String"), l, false) end

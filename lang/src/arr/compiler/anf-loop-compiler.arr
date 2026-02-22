@@ -133,7 +133,7 @@ effective-ids = D.make-mutable-string-dict()
 fun fresh-id(id :: A.Name) -> A.Name:
   base-name = if A.is-s-type-global(id): id.tosourcestring() else: id.toname() end
   no-hyphens = string-replace(base-name, "-", "$")
-  n = js-names.make-atom(no-hyphens)
+  n = js-names.make-atom(id.l, no-hyphens)
   if effective-ids.has-key-now(n.tosourcestring()) block: #awkward name collision!
     fresh-id(id)
   else:
@@ -2291,7 +2291,7 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
   module-id = fresh-id(compiler-name(l.source)).tosourcestring()
   module-ref = lam(name): j-bracket(rt-field("modules"), j-str(name)) end
   input-ids = CL.map_list(lam(i):
-      if A.is-s-atom(i) and (i.base == "$import"): js-names.make-atom("$$import")
+      if A.is-s-atom(i) and (i.base == "$import"): js-names.make-atom(i.l, "$$import")
       else: js-id-of(compiler-name(i.toname()))
       end
     end, mod-ids)

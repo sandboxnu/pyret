@@ -474,7 +474,7 @@ fun type-from-raw(uri, typ, tyvar-env :: SD.StringDict<T.Type>) block:
       end
     | t == "forall" then:
       new-env = for fold(new-env from tyvar-env, a from typ.args):
-        tvn = A.global-names.make-atom(a)
+        tvn = A.global-names.make-atom(l, a)
         new-env.set(a, tvn)
       end
       params = for SD.map-keys(k from new-env):
@@ -518,7 +518,7 @@ fun datatype-from-raw(uri, datatyp):
     d-alias(origin, datatyp.name)
   else if datatyp.tag == "data":
     pdict = for fold(pdict from SD.make-string-dict(), a from datatyp.params):
-      tvn = A.global-names.make-atom(a)
+      tvn = A.global-names.make-atom(l, a)
       pdict.set(a, tvn)
     end
     params = for SD.map-keys(k from pdict):
@@ -3003,7 +3003,7 @@ t-within-num = t-arrow([list: t-number], t-arrow([list: t-number, t-number], t-b
 t-within-any = t-arrow([list: t-number], t-arrow([list: t-top, t-top], t-boolean))
 
 fun t-forall1(f):
-  n = A.global-names.make-atom("a")
+  n = A.global-names.make-atom(A.dummy-loc, "a")
   t-forall([list: t-var(n)], f(t-var(n)))
 end
 

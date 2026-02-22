@@ -44,14 +44,14 @@ string-dict = SD.string-dict
 
 s-atom                    = A.s-atom
 
-tva = t-var(A.global-names.make-atom("A"))
-tvb = t-var(A.global-names.make-atom("B"))
-tvc = t-var(A.global-names.make-atom("C"))
-tvd = t-var(A.global-names.make-atom("D"))
-tve = t-var(A.global-names.make-atom("E"))
-tvf = t-var(A.global-names.make-atom("F"))
-tvg = t-var(A.global-names.make-atom("G"))
-tvh = t-var(A.global-names.make-atom("H"))
+tva = t-var(A.global-names.make-atom(A.dummy-loc, "A"))
+tvb = t-var(A.global-names.make-atom(A.dummy-loc, "B"))
+tvc = t-var(A.global-names.make-atom(A.dummy-loc, "C"))
+tvd = t-var(A.global-names.make-atom(A.dummy-loc, "D"))
+tve = t-var(A.global-names.make-atom(A.dummy-loc, "E"))
+tvf = t-var(A.global-names.make-atom(A.dummy-loc, "F"))
+tvg = t-var(A.global-names.make-atom(A.dummy-loc, "G"))
+tvh = t-var(A.global-names.make-atom(A.dummy-loc, "H"))
 
 t-image = t-name(module-uri("builtin://image-lib"), A.s-type-global(A.dummy-loc, "Image"))
 t-option = t-name(module-uri("builtin://option"), A.s-type-global(A.dummy-loc, "Option"))

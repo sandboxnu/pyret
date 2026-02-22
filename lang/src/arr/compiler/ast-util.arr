@@ -526,7 +526,7 @@ inline-lams = A.default-map-visitor.{
     cases(A.Expr) f:
       | s-lam(l, _, _, args, ann, _, body, _, _, _) =>
         if (args.length() == exps.length()):
-          a = A.global-names.make-atom("inline_body")
+          a = A.global-names.make-atom(l, "inline_body")
           let-binds = for lists.map2(arg from args, exp from exps):
             A.s-let-bind(arg.l, arg, exp.visit(self))
           end
@@ -937,7 +937,7 @@ fun wrap-extra-imports(p :: A.Program, env :: CS.ExtraImports) -> A.Program:
           |#
           l = A.dummy-loc
           for fold(lst from empty, i from imports):
-              name-to-use = if i.as-name == "_": A.global-names.make-atom("$extra-import") else: A.s-name(l, i.as-name) end
+              name-to-use = if i.as-name == "_": A.global-names.make-atom(l, "$extra-import") else: A.s-name(l, i.as-name) end
               ast-dep = cases(CS.Dependency) i.dependency:
                 | builtin(name) => A.s-const-import(p.l, name)
                 | dependency(protocol, args) => A.s-special-import(p.l, protocol, args)
