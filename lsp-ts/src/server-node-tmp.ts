@@ -157,7 +157,6 @@ function sendInfoRequest(
 
     client.on("message", (data: WebSocket.RawData) => {
       const msg = JSON.parse(data.toString());
-      connection.console.error(`received: ${data}`);
       if (msg.type === "jump-to-def-success") {
         if (!settled) {
           settled = true;
@@ -210,7 +209,6 @@ connection.onDefinition(async (params) => {
     : fileUri;
 
   try {
-    connection.console.info(`sending request: ${portFile} ${filePath}:${line}:${col}`);
     const result = await sendInfoRequest(portFile, filePath, line, col);
     if (!result) {
       return null;

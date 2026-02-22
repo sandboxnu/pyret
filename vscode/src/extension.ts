@@ -24,6 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
   );
   const debugOptions = { execArgv: ["--nolazy", "--inspect=6009"] };
   const outputChannel = vscode.window.createOutputChannel(
+    "Pyret Server",
+  );
+  const traceOutputChannel = vscode.window.createOutputChannel(
     "Pyret Language Server",
   );
 
@@ -42,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
       fileEvents: vscode.workspace.createFileSystemWatcher("**/*.arr"),
     },
     outputChannel: outputChannel,
-    traceOutputChannel: outputChannel,
+    traceOutputChannel: traceOutputChannel,
   };
 
   client = new LanguageClient(
