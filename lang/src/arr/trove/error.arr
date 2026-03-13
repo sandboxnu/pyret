@@ -718,18 +718,29 @@ data RuntimeError:
       else if src-available(self.loc):
         cases(O.Option) maybe-ast(self.loc):
           | some(ast) =>
-            shadow ast = cases(Any) ast:
-              | s-dot(_,_,_) => ast
-              | s-app(_,f,_) => f
+            if self.field == "load":
+              # load-table ... source: "..." end desugars to "...".load(...),
+              # so self.field is "load" and the pre-desugar AST is s-load-table.
+              [ED.error:
+                ed-intro("table loader expression", self.loc, -1, true),
+                ED.cmcode(self.loc),
+                [ED.para:
+                  ED.text("The source could not be loaded:")],
+                ED.embed(self.non-obj)]
+            else:
+              shadow ast = cases(Any) ast:
+                | s-dot(_,_,_) => ast
+                | s-app(_,f,_) => f
+              end
+              [ED.error:
+                ed-intro("field lookup expression", self.loc, -1, true),
+                ED.cmcode(self.loc),
+                [ED.para:
+                  ED.text("The "),
+                  ED.highlight(ED.text("left side"), [ED.locs: ast.obj.l], 0),
+                  ED.text(" was not an object:")],
+                ED.embed(self.non-obj)]
             end
-            [ED.error:
-              ed-intro("field lookup expression", self.loc, -1, true),
-              ED.cmcode(self.loc),
-              [ED.para:
-                ED.text("The "),
-                ED.highlight(ED.text("left side"), [ED.locs: ast.obj.l], 0),
-                ED.text(" was not an object:")],
-              ED.embed(self.non-obj)]
           | none =>
             [ED.error:
               ed-intro("field lookup expression", self.loc, -1, true),
