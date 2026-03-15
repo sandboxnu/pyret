@@ -35,7 +35,7 @@ function getSocketPath(): string {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  return path.join(dir, "comm.sock");
+  return path.join(dir, `comm-${process.pid}.sock`);
 }
 
 function startPyretServer(portFile: string): Promise<void> {
