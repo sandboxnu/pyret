@@ -720,40 +720,35 @@ data RuntimeError:
           | some(ast) =>
             cases(Any) ast:
               | s-load-table(_, _, specs) =>
-                maybe-src-spec = specs.find(lam(s): cases(Any) s: | s-table-src(_,_) => true | else => false end end)
-                cases(O.Option) maybe-src-spec:
-                  | some(src-spec) =>
-                    [ED.error:
-                      ed-intro("table loader expression", self.loc, -1, true),
-                      ED.cmcode(self.loc),
-                      [ED.para:
-                        ED.text("The "),
-                        ED.highlight(ED.text("source"), [ED.locs: src-spec.l], -2),
-                        ED.text(" could not be loaded:")],
-                      ED.embed(self.non-obj)]
-                  | none =>
-                    [ED.error:
-                      ed-intro("table loader expression", self.loc, -1, true),
-                      ED.cmcode(self.loc),
-                      [ED.para: ED.text("The source could not be loaded:")],
-                      ED.embed(self.non-obj)]
-                end
+                # well-formedness enforces exactly one s-table-src in specs (well-formed.arr:1023),
+                # so .find() always returns some and projecting with .value is safe
+                src-spec = specs.find(lam(s): cases(Any) s: | s-table-src(_,_) => true | else => false end end).value
+                [ED.error:
+                  ed-intro("table loader expression", self.loc, -1, true),
+                  ED.cmcode(self.loc),
+                  [ED.para:
+                    ED.text("The "),
+                    ED.highlight(ED.text("source"), [ED.locs: src-spec.l], 0),
+                    ED.text(" could not be loaded:")],
+                  ED.embed(self.non-obj)]
               | s-dot(_,_,_) =>
+                obj-loc = ast.obj.l
                 [ED.error:
                   ed-intro("field lookup expression", self.loc, -1, true),
                   ED.cmcode(self.loc),
                   [ED.para:
                     ED.text("The "),
-                    ED.highlight(ED.text("left side"), [ED.locs: ast.obj.l], 0),
+                    ED.highlight(ED.text("left side"), [ED.locs: obj-loc], 0),
                     ED.text(" was not an object:")],
                   ED.embed(self.non-obj)]
               | s-app(_,f,_) =>
+                obj-loc = f.obj.l
                 [ED.error:
                   ed-intro("field lookup expression", self.loc, -1, true),
                   ED.cmcode(self.loc),
                   [ED.para:
                     ED.text("The "),
-                    ED.highlight(ED.text("left side"), [ED.locs: f.obj.l], 0),
+                    ED.highlight(ED.text("left side"), [ED.locs: obj-loc], 0),
                     ED.text(" was not an object:")],
                   ED.embed(self.non-obj)]
             end
