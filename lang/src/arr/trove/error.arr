@@ -731,18 +731,11 @@ data RuntimeError:
                     ED.highlight(ED.text("source"), [ED.locs: src-spec.l], 0),
                     ED.text(" could not be loaded:")],
                   ED.embed(self.non-obj)]
-              | s-dot(_,_,_) =>
-                obj-loc = ast.obj.l
-                [ED.error:
-                  ed-intro("field lookup expression", self.loc, -1, true),
-                  ED.cmcode(self.loc),
-                  [ED.para:
-                    ED.text("The "),
-                    ED.highlight(ED.text("left side"), [ED.locs: obj-loc], 0),
-                    ED.text(" was not an object:")],
-                  ED.embed(self.non-obj)]
-              | s-app(_,f,_) =>
-                obj-loc = f.obj.l
+              | else =>
+                obj-loc = cases(Any) ast:
+                  | s-dot(_,_,_) => ast.obj.l
+                  | s-app(_,f,_) => f.obj.l
+                end
                 [ED.error:
                   ed-intro("field lookup expression", self.loc, -1, true),
                   ED.cmcode(self.loc),
