@@ -718,28 +718,44 @@ data RuntimeError:
       else if src-available(self.loc):
         cases(O.Option) maybe-ast(self.loc):
           | some(ast) =>
-            if self.field == "load":
-              # load-table ... source: "..." end desugars to "...".load(...),
-              # so self.field is "load" and the pre-desugar AST is s-load-table.
-              [ED.error:
-                ed-intro("table loader expression", self.loc, -1, true),
-                ED.cmcode(self.loc),
-                [ED.para:
-                  ED.text("The source could not be loaded:")],
-                ED.embed(self.non-obj)]
-            else:
-              shadow ast = cases(Any) ast:
-                | s-dot(_,_,_) => ast
-                | s-app(_,f,_) => f
-              end
-              [ED.error:
-                ed-intro("field lookup expression", self.loc, -1, true),
-                ED.cmcode(self.loc),
-                [ED.para:
-                  ED.text("The "),
-                  ED.highlight(ED.text("left side"), [ED.locs: ast.obj.l], 0),
-                  ED.text(" was not an object:")],
-                ED.embed(self.non-obj)]
+            cases(Any) ast:
+              | s-load-table(_, _, specs) =>
+                maybe-src-spec = specs.find(lam(s): cases(Any) s: | s-table-src(_,_) => true | else => false end end)
+                cases(O.Option) maybe-src-spec:
+                  | some(src-spec) =>
+                    [ED.error:
+                      ed-intro("table loader expression", self.loc, -1, true),
+                      ED.cmcode(self.loc),
+                      [ED.para:
+                        ED.text("The "),
+                        ED.highlight(ED.text("source"), [ED.locs: src-spec.l], -2),
+                        ED.text(" could not be loaded:")],
+                      ED.embed(self.non-obj)]
+                  | none =>
+                    [ED.error:
+                      ed-intro("table loader expression", self.loc, -1, true),
+                      ED.cmcode(self.loc),
+                      [ED.para: ED.text("The source could not be loaded:")],
+                      ED.embed(self.non-obj)]
+                end
+              | s-dot(_,_,_) =>
+                [ED.error:
+                  ed-intro("field lookup expression", self.loc, -1, true),
+                  ED.cmcode(self.loc),
+                  [ED.para:
+                    ED.text("The "),
+                    ED.highlight(ED.text("left side"), [ED.locs: ast.obj.l], 0),
+                    ED.text(" was not an object:")],
+                  ED.embed(self.non-obj)]
+              | s-app(_,f,_) =>
+                [ED.error:
+                  ed-intro("field lookup expression", self.loc, -1, true),
+                  ED.cmcode(self.loc),
+                  [ED.para:
+                    ED.text("The "),
+                    ED.highlight(ED.text("left side"), [ED.locs: f.obj.l], 0),
+                    ED.text(" was not an object:")],
+                  ED.embed(self.non-obj)]
             end
           | none =>
             [ED.error:
