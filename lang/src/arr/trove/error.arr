@@ -720,9 +720,16 @@ data RuntimeError:
           | some(ast) =>
             cases(Any) ast:
               | s-load-table(_, _, specs) =>
-                # well-formedness enforces exactly one s-table-src in specs (well-formed.arr:1023),
-                # so .find() always returns some and projecting with .value is safe
-                src-spec = specs.find(lam(s): cases(Any) s: | s-table-src(_,_) => true | else => false end end).value
+                # desugaring uses `.load(...)`, which can fail (See brownplt/pyret-lang#1855).
+                # well-formedness enforces exactly one s-table-src (see well-formed.arr),
+                # so `.find(...)` always returns `some` and projecting with `.value` is safe.
+                # `is-s-table-src` cannot be used without creating a cyclic module dependency.
+                src-spec = specs.find(lam(s): 
+                  cases(Any) s: 
+                  | s-table-src(_,_) => true 
+                  | else => false 
+                  end
+                end).value
                 [ED.error:
                   ed-intro("table loader expression", self.loc, -1, true),
                   ED.cmcode(self.loc),
