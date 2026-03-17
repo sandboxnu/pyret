@@ -718,18 +718,40 @@ data RuntimeError:
       else if src-available(self.loc):
         cases(O.Option) maybe-ast(self.loc):
           | some(ast) =>
-            shadow ast = cases(Any) ast:
-              | s-dot(_,_,_) => ast
-              | s-app(_,f,_) => f
+            cases(Any) ast:
+              | s-load-table(_, _, specs) =>
+                # desugaring uses `.load(...)`, which can fail (See brownplt/pyret-lang#1855).
+                # well-formedness enforces exactly one s-table-src (see well-formed.arr),
+                # so `.find(...)` always returns `some` and projecting with `.value` is safe.
+                # `is-s-table-src` cannot be used without creating a cyclic module dependency.
+                src-spec = specs.find(lam(s): 
+                  cases(Any) s: 
+                  | s-table-src(_,_) => true 
+                  | else => false 
+                  end
+                end).value
+                [ED.error:
+                  ed-intro("table loader expression", self.loc, -1, true),
+                  ED.cmcode(self.loc),
+                  [ED.para:
+                    ED.text("The "),
+                    ED.highlight(ED.text("source"), [ED.locs: src-spec.l], 0),
+                    ED.text(" could not be loaded:")],
+                  ED.embed(self.non-obj)]
+              | else =>
+                obj-loc = cases(Any) ast:
+                  | s-dot(_,_,_) => ast.obj.l
+                  | s-app(_,f,_) => f.obj.l
+                end
+                [ED.error:
+                  ed-intro("field lookup expression", self.loc, -1, true),
+                  ED.cmcode(self.loc),
+                  [ED.para:
+                    ED.text("The "),
+                    ED.highlight(ED.text("left side"), [ED.locs: obj-loc], 0),
+                    ED.text(" was not an object:")],
+                  ED.embed(self.non-obj)]
             end
-            [ED.error:
-              ed-intro("field lookup expression", self.loc, -1, true),
-              ED.cmcode(self.loc),
-              [ED.para:
-                ED.text("The "),
-                ED.highlight(ED.text("left side"), [ED.locs: ast.obj.l], 0),
-                ED.text(" was not an object:")],
-              ED.embed(self.non-obj)]
           | none =>
             [ED.error:
               ed-intro("field lookup expression", self.loc, -1, true),
