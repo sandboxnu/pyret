@@ -2305,10 +2305,12 @@ table.pyret-table.pyret-matrix {
 
 
 table.pyret-table { width: 98%; overflow: scroll; }
+/* make sure rotate elts in the table (like roughnums!) don't punch through */
 table.pyret-table thead {
   box-shadow: 0px 2px 2px var(--shadow-color);
   position: sticky;
   top: 0;
+  z-index: 1; 
 }
 
 table.pyret-table tr:last-child td:first-child {
