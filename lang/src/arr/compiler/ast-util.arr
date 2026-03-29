@@ -1546,3 +1546,16 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
       end
   end
 end
+
+fun get-doc-string(expr :: A.Expr) -> String:
+  # empty string sounds bad but we already are parsing missing docstrings
+  # into the empty string, so we have to case anyways...
+  doc: "extracts the docstring if one exists; empty string otherwise"
+  cases(A.Expr) expr:
+    | s-lam(_, _, _, _, _, doc, _, _, _, _) => doc
+    | s-fun(_, _, _, _, _, _, doc, _, _, _, _) => doc
+    | s-method(_, _, _, _, _, doc, _, _, _, _) => doc
+    | s-method-field(_, _, _, _, _, doc, _, _, _, _) => doc
+    | else => ""
+  end
+end

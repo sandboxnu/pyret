@@ -769,12 +769,13 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         | some(shadow val-info) =>
           cases(C.ValueExport) val-info block:
             | v-var(_, t) =>
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(A.dummy-loc, name), A.a-blank)
+              # ZACK TODO: what should we do with vars here??
+              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(A.dummy-loc, name), A.a-blank, "")
               bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
               acc.set-now(name, b)
             | else =>
               # TODO(joe): Good place to add _location_ to valueexport to report errs better
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(A.dummy-loc, name), A.a-blank)
+              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(A.dummy-loc, name), A.a-blank, "IMPORT PLACEHOLDER")
               bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
               acc.set-now(name, b)
           end
@@ -813,8 +814,14 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       # TODO(joe): I think that b.b.ann.visit below could be wrong if
       # a letrec'd ID is used in a refinement within the same letrec,
       # so state may be necessary here
+
       atom-env = make-atom-for(b.b.id, b.b.shadows, env, bindings,
-        C.value-bind(C.bo-local(b.l, b.b.id), C.vb-letrec, _, b.b.ann.visit(visitor)))
+        C.value-bind(
+          C.bo-local(b.l, b.b.id),
+          C.vb-letrec,
+          _,
+          b.b.ann.visit(visitor),
+          U.get-doc-string(b.value)))
       { atom-env.env; link(atom-env.atom, atoms) }
     end
     new-visitor = visitor.{env: env}
@@ -864,7 +871,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
   fun handle-column-binds(column-binds :: A.ColumnBinds, visitor):
     env-and-binds = for fold(acc from { env: visitor.env, cbs: [list: ] }, cb from column-binds.binds):
         atom-env = make-atom-for(cb.id, cb.shadows, acc.env, bindings,
-          C.value-bind(C.bo-local(cb.l, cb.id), C.vb-let, _, cb.ann.visit(visitor)))
+          C.value-bind(C.bo-local(cb.l, cb.id), C.vb-let, _, cb.ann.visit(visitor), ""))
         new-cb = A.s-bind(cb.l, cb.shadows, atom-env.atom, cb.ann.visit(visitor.{env: acc.env}))
         { env: atom-env.env, cbs: link(new-cb, acc.cbs) }
       end
@@ -878,6 +885,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
     "$included-" + to-string(include-counter)
   end
 
+  # ZACK: revisit like above for module related stuff...
   fun add-value-name(l, imp-loc, env, vname, as-name, mod-info):
     maybe-value-export = mod-info.values.get(vname.toname())
     cases(Option) maybe-value-export block:
@@ -890,7 +898,11 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
           | else => C.vb-let
         end
         atom-env = make-import-atom-for(as-name, value-export.origin.uri-of-definition, env, bindings,
-          C.value-bind(C.bo-module(as-name.l, value-export.origin.definition-bind-site, value-export.origin.uri-of-definition, value-export.origin.original-name), vbinder, _, A.a-any(vname.l)))
+          C.value-bind(C.bo-module(as-name.l, 
+              value-export.origin.definition-bind-site,
+              value-export.origin.uri-of-definition,
+              value-export.origin.original-name),
+            vbinder, _, A.a-any(vname.l), "VALUE ENV PLACEHOLDER"))
         atom-env.env
     end
   end
@@ -1474,8 +1486,9 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
             # TODO(joe): What should the TypeBindTyp be here?
             atom-env-t = make-atom-for(name, false, te, type-bindings,
               C.type-bind(C.bo-local(l2, name), C.tb-type-let, _, C.tb-none))
+            # ZACK TODO: wtf is this??
             atom-env = make-atom-for(tname, false, e, bindings,
-              C.value-bind(C.bo-local(l2, tname), C.vb-let, _, A.a-blank))
+              C.value-bind(C.bo-local(l2, tname), C.vb-let, _, A.a-blank, "ZACK what this"))
             new-bind = A.s-newtype-bind(l2, atom-env-t.atom, atom-env.atom)
             { atom-env.env; atom-env-t.env; link(new-bind, bs) }
         end
@@ -1490,7 +1503,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
           | s-let-bind(l2, bind, expr) =>
             visited-ann = bind.ann.visit(self.{env: e})
             atom-env = make-atom-for(bind.id, bind.shadows, e, bindings,
-              C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, visited-ann))
+              C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, visited-ann, U.get-doc-string(expr)))
             visit-expr = expr.visit(self.{env: e})
             new-bind = A.s-let-bind(l2, A.s-bind(l2, bind.shadows, atom-env.atom, visited-ann), visit-expr)
             {
@@ -1501,7 +1514,8 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
           | s-var-bind(l2, bind, expr) =>
             visited-ann = bind.ann.visit(self.{env: e})
             atom-env = make-atom-for(bind.id, bind.shadows, e, bindings,
-              C.value-bind(C.bo-local(l2, bind.id), C.vb-var, _, visited-ann))
+              # ZACK TODO: we can't do anything here right...
+              C.value-bind(C.bo-local(l2, bind.id), C.vb-var, _, visited-ann, ""))
             visit-expr = expr.visit(self.{env: e})
             new-bind = A.s-var-bind(l2, A.s-bind(l2, bind.shadows, atom-env.atom, visited-ann), visit-expr)
             {
@@ -1526,7 +1540,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         cases(A.ForBind) fb block:
           | s-for-bind(l2, bind, val) => 
             atom-env = make-atom-for(bind.id, bind.shadows, env, bindings,
-              C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, bind.ann.visit(self)))
+              C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, bind.ann.visit(self), ""))
             new-bind = A.s-bind(bind.l, bind.shadows, atom-env.atom, bind.ann.visit(self.{env: env}))
             visit-val = val.visit(self)
             new-fb = A.s-for-bind(l2, new-bind, visit-val)
@@ -1539,7 +1553,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       {env; atoms} = for fold(acc from { self.env; empty }, a from args.map(_.bind)):
         {env; atoms} = acc
         atom-env = make-atom-for(a.id, a.shadows, env, bindings,
-          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(self)))
+          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(self), ""))
         { atom-env.env; link(atom-env.atom, atoms) }
       end
       new-args = for map2(a from args, at from atoms.reverse()):
@@ -1580,7 +1594,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       {env; atoms} = for fold(acc from { with-params.env; empty }, a from args):
         {env; atoms} = acc
         atom-env = make-atom-for(a.id, a.shadows, env, bindings,
-          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(with-params)))
+          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(with-params), ""))
         { atom-env.env; link(atom-env.atom, atoms) }
       end
       new-args = for map2(a from args, at from atoms.reverse()):
@@ -1608,7 +1622,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       {env; atoms} = for fold(acc from { with-params.env; empty }, a from args):
         {env; atoms} = acc
         atom-env = make-atom-for(a.id, a.shadows, env, bindings,
-          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(with-params)))
+          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(with-params), ""))
         { atom-env.env; link(atom-env.atom, atoms) }
       end
       new-args = for map2(a from args, at from atoms.reverse()):
@@ -1631,7 +1645,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       {env; atoms} = for fold(acc from { with-params.env; empty }, a from args):
         {env; atoms} = acc
         atom-env = make-atom-for(a.id, a.shadows, env, bindings,
-          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(with-params)))
+          C.value-bind(C.bo-local(a.l, a.id), C.vb-let, _, a.ann.visit(with-params), ""))
         { atom-env.env; link(atom-env.atom, atoms) }
       end
       new-args = for map2(a from args, at from atoms.reverse()):
@@ -1721,7 +1735,8 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       new-bind = cases(A.Bind) bind:
         | s-bind(l2, shadows, name, ann) =>
           atom-env = make-atom-for(name, true, self.env, bindings,
-            C.value-bind(C.bo-local(l2, name), C.vb-let, _, ann.visit(self)))
+            # ZACK TODO: maybe improve this?
+            C.value-bind(C.bo-local(l2, name), C.vb-let, _, ann.visit(self), "VARIANT"))
           A.s-bind(l2, shadows, atom-env.atom, ann.visit(self))
       end
       A.s-variant-member(l, typ, new-bind)

@@ -99,7 +99,9 @@ data ValueBind:
       origin :: BindOrigin,
       binder :: ValueBinder,
       atom :: A.Name,
-      ann :: A.Ann)
+      ann :: A.Ann,
+      # the (possible empty) doc string for hovering over this (value) binding
+      doc :: String)
 end
 
 data TypeBinder:
