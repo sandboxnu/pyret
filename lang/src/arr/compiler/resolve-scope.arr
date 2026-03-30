@@ -814,14 +814,12 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       # TODO(joe): I think that b.b.ann.visit below could be wrong if
       # a letrec'd ID is used in a refinement within the same letrec,
       # so state may be necessary here
-
+      ann = b.b.ann.visit(visitor)
+      {doc; computed-fun-ann} = U.get-fun-hover-info(b.value)
+      # only override if there is no annotation written
+      shadow ann = if A.is-a-blank(ann): computed-fun-ann else: ann end
       atom-env = make-atom-for(b.b.id, b.b.shadows, env, bindings,
-        C.value-bind(
-          C.bo-local(b.l, b.b.id),
-          C.vb-letrec,
-          _,
-          b.b.ann.visit(visitor),
-          U.get-doc-string(b.value)))
+        C.value-bind(C.bo-local(b.l, b.b.id), C.vb-letrec, _, ann, doc))
       { atom-env.env; link(atom-env.atom, atoms) }
     end
     new-visitor = visitor.{env: env}
@@ -1502,8 +1500,11 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         cases(A.LetBind) b block:
           | s-let-bind(l2, bind, expr) =>
             visited-ann = bind.ann.visit(self.{env: e})
+            {doc; computed-fun-ann} = U.get-fun-hover-info(b.value)
+            # only override if there is no annotation written
+            ann = if A.is-a-blank(ann): computed-fun-ann else: visited-ann end
             atom-env = make-atom-for(bind.id, bind.shadows, e, bindings,
-              C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, visited-ann, U.get-doc-string(expr)))
+              C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, ann, doc))
             visit-expr = expr.visit(self.{env: e})
             new-bind = A.s-let-bind(l2, A.s-bind(l2, bind.shadows, atom-env.atom, visited-ann), visit-expr)
             {

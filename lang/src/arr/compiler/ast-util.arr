@@ -1547,15 +1547,35 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
   end
 end
 
-fun get-doc-string(expr :: A.Expr) -> String:
+fun get-fun-hover-info(expr :: A.Expr) -> {String; A.Ann}:
   # empty string sounds bad but we already are parsing missing docstrings
-  # into the empty string, so we have to case anyways...
-  doc: "extracts the docstring if one exists; empty string otherwise"
+  # into the empty string, so we have to detect and elide anyways...
+  # similarly, we detect and elide empty annotations,
+  # so that is a fine default too.
+  doc: ```
+       Extracts the docstring if one exists; empty string otherwise.
+       Turns annotations on function-like expressions into arrow annotation;
+       empty annotation otherwise.
+       Assumes all tuple annotations have been desugared.
+       ```
+
+  fun piece-into-arrow(params :: List<Bind>, ret :: A.Ann) -> A.Ann%(is-a-arrow-argnames):
+    a-field-params = for map(p from params):
+      # s-tuple-binds should be gone by now
+      a-field(p.l, p.id, p.ann)
+    end
+    a-arrow-argnames(A.dummy-loc, a-field-params, ret, false)
+  end
+
   cases(A.Expr) expr:
-    | s-lam(_, _, _, _, _, doc, _, _, _, _) => doc
-    | s-fun(_, _, _, _, _, _, doc, _, _, _, _) => doc
-    | s-method(_, _, _, _, _, doc, _, _, _, _) => doc
-    | s-method-field(_, _, _, _, _, doc, _, _, _, _) => doc
-    | else => ""
+    | s-lam(_, _, _, params, ann, doc, _, _, _, _) => 
+      {doc; piece-into-arrow(params, ann)}
+    | s-fun(_, _, _, _, params, ann, doc, _, _, _, _) => 
+      {doc; piece-into-arrow(params, ann)}
+    | s-method(_, _, _, params, ann, doc, _, _, _, _) => 
+      {doc; piece-into-arrow(params, ann)}
+    | s-method-field(_, _, _, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann)}
+    | else => {""; A.a-blank}
   end
 end

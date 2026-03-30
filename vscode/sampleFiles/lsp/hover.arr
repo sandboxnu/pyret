@@ -25,3 +25,4 @@ end
 
 div2 :: ((n :: Number, m :: Number) -> Boolean) = div-refine
 g = lam(n :: Number) -> Boolean: not-zero(n) end
+g-ann :: Any = lam(n :: Number) -> Boolean: not-zero(n) end
