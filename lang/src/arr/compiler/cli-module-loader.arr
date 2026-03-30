@@ -83,6 +83,20 @@ fun uri-to-path(uri, name):
   name + "-" + crypto.sha256(uri)
 end
 
+
+# LSPCacheManager:
+# - in memory
+# - orignal AST, desugared/resolved AST, env, post-compile-env
+# - imports + provides
+
+type CacheManger = {
+  cached-available :: ((basedir, uri, name, modified-time) -> Option<Any>),
+  get-cached :: (... -> ...),
+  get-cached-if-available :: ( ... -> ...),
+  get-loadable :: (... -> ...),
+  set-loadable :: (... -> ...)
+}
+
 # NOTE(joe): This is just a little one-off type to represent a simple
 # situation: Builtin pure-JS files are stored in single files with a hash
 # followed by .js, while builtin Pyret files are stored in two files – one with
@@ -203,23 +217,23 @@ fun get-file-locator(basedir, real-path):
   get-cached-if-available(basedir, loc)
 end
 
-fun get-builtin-locator(basedir, read-only-basedirs, modname):
+fun get-builtin-locator(cache-manager, basedir, read-only-basedirs, modname):
   all-dirs = read-only-basedirs
 
   first-available = for find(rob from all-dirs):
-    is-some(cached-available(rob, "builtin://" + modname, modname, 0))
+    is-some(cache-manager.available(rob, "builtin://" + modname, modname, 0))
   end
   cases(Option) first-available:
     | none =>
       cases(Option) BL.maybe-make-builtin-locator(modname) block:
         | some(loc) =>
-          get-cached-if-available(basedir, loc)
+          cache-manager.get-if-available(basedir, loc)
         | none =>
           raise("Could not find builtin module " + modname + " in any of " + all-dirs.join-str(", "))
       end
     | some(ro-basedir) =>
-      ca = cached-available(ro-basedir, "builtin://" + modname, modname, 0).or-else(split)
-      get-cached(ro-basedir, "builtin://" + modname, modname, ca)
+      ca = cache-manager.available(ro-basedir, "builtin://" + modname, modname, 0).or-else(split)
+      cache-manager.get(ro-basedir, "builtin://" + modname, modname, ca)
   end
 end
 
@@ -471,9 +485,22 @@ fun run(path, options, subsequent-command-line-arguments):
   end
 end
 
+fun make-file-cache() -> CacheManger:
+end
+
+fun make-in-memory-cache() -> CacheManger:
+  raise("todo")
+end
+
 fun build-program(path, options, stats) block:
   doc: ```Returns the program as a JavaScript AST of module list and dependency map,
           and its native dependencies as a list of strings```
+
+  cache-manager = if options.lsp:
+    make-in-memory-cache()
+  else:
+    make-file-cache()
+  end
 
   print-progress-clearing = lam(s, to-clear):
     when options.display-progress:
