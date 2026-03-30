@@ -1559,12 +1559,12 @@ fun get-fun-hover-info(expr :: A.Expr) -> {String; A.Ann}:
        Assumes all tuple annotations have been desugared.
        ```
 
-  fun piece-into-arrow(params :: List<Bind>, ret :: A.Ann) -> A.Ann%(is-a-arrow-argnames):
+  fun piece-into-arrow(params :: List<A.Bind>, ret :: A.Ann) -> A.Ann:
     a-field-params = for map(p from params):
       # s-tuple-binds should be gone by now
-      a-field(p.l, p.id, p.ann)
+      A.a-field(p.l, p.id.tosourcestring(), p.ann)
     end
-    a-arrow-argnames(A.dummy-loc, a-field-params, ret, false)
+    A.a-arrow-argnames(A.dummy-loc, a-field-params, ret, false)
   end
 
   cases(A.Expr) expr:

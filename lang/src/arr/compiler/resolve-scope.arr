@@ -1502,7 +1502,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
             visited-ann = bind.ann.visit(self.{env: e})
             {doc; computed-fun-ann} = U.get-fun-hover-info(b.value)
             # only override if there is no annotation written
-            ann = if A.is-a-blank(ann): computed-fun-ann else: visited-ann end
+            ann = if A.is-a-blank(visited-ann): computed-fun-ann else: visited-ann end
             atom-env = make-atom-for(bind.id, bind.shadows, e, bindings,
               C.value-bind(C.bo-local(l2, bind.id), C.vb-let, _, ann, doc))
             visit-expr = expr.visit(self.{env: e})
