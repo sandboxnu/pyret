@@ -83,6 +83,21 @@ fun uri-to-path(uri, name):
   name + "-" + crypto.sha256(uri)
 end
 
+
+# LSPCacheManager:
+# - in memory
+# - orignal AST, desugared/resolved AST, env, post-compile-env
+# - imports + provides
+
+type CacheManger = {
+  cached-available :: ((basedir, uri, name, modified-time) -> Option<Any>),
+  get-cached :: (... -> ...),
+  get-cached-if-available :: ( ... -> ...),
+  get-loadable :: (... -> ...),
+  set-loadable :: (... -> ...),
+  get-builtin-locator :: (... -> ...)
+}
+
 # NOTE(joe): This is just a little one-off type to represent a simple
 # situation: Builtin pure-JS files are stored in single files with a hash
 # followed by .js, while builtin Pyret files are stored in two files – one with
@@ -100,7 +115,7 @@ end
 # it's fine to pass a modified time of 0 to indicate that we're always happy
 # with the compiled version of the file.
 
-fun cached-available(basedir, uri, name, modified-time) -> Option<CachedType>:
+fun file-cached-available(basedir, uri, name, modified-time) -> Option<CachedType>:
   saved-path = Filesystem.join(basedir, uri-to-path(uri, name))
 
   if (Filesystem.exists(saved-path + "-static.js") and
@@ -114,7 +129,17 @@ fun cached-available(basedir, uri, name, modified-time) -> Option<CachedType>:
   end
 end
 
-fun get-cached(basedir, uri, name, cache-type):
+fun mem-cached-available(store, basedir, uri, name, _) -> Option<Nothing>:
+  key = basedir + uri + name
+  if store.has-key-now(key):
+    some(nothing)
+  else:
+    none
+  end
+end
+
+
+fun file-get-cached(basedir, uri, name, cache-type):
   saved-path = Filesystem.join(basedir, uri-to-path(uri, name))
   {static-path; module-path} = cases(CachedType) cache-type:
                 # NOTE(joe): leaving off .js because builtin-raw-locator below
@@ -172,8 +197,64 @@ fun get-cached(basedir, uri, name, cache-type):
   }
 end
 
-fun get-cached-if-available(basedir, loc) block:
-  get-cached-if-available-known-mtimes(basedir, loc, [SD.string-dict:])
+fun mem-get-cached(store, basedir, uri, name, _):
+  key = basedir + uri + name
+  {
+    method get-uncached(_): none end,
+    method needs-compile(_, _): false end,
+    method get-modified-time(self):
+      0
+    end,
+    method get-options(self, options):
+      options.{ checks: "none" }
+    end,
+    method get-module(_):
+      raise("Should never fetch source for builtin module " + key)
+    end,
+    method get-extra-imports(self):
+      CS.standard-imports
+    end,
+    method get-dependencies(_):
+      # deps = raw.get-raw-dependencies()
+      # raw-array-to-list(deps).map(CS.make-dep)
+      ...
+    end,
+    method get-native-modules(_):
+      # natives = raw.get-raw-native-modules()
+      # raw-array-to-list(natives).map(CS.requirejs)
+      ...
+    end,
+    method get-globals(_):
+      CS.standard-globals
+    end,
+
+    method uri(_): uri end,
+    method name(_): name end,
+
+    method set-compiled(_, _, _): nothing end,
+    method get-compiled(self):
+      # provs = CS.provides-from-raw-provides(self.uri(), {
+      #     uri: self.uri(),
+      #     values: raw-array-to-list(raw.get-raw-value-provides()),
+      #     aliases: raw-array-to-list(raw.get-raw-alias-provides()),
+      #     datatypes: raw-array-to-list(raw.get-raw-datatype-provides()),
+      #     modules: raw-array-to-list(raw.get-raw-module-provides())
+      #   })
+      # some(CL.module-as-string(provs, CS.no-builtins, CS.computed-none,
+      #     CS.ok(JSP.ccp-file(Filesystem.resolve(module-path + ".js")))))
+      ...
+    end,
+
+    method _equals(self, other, req-eq):
+      req-eq(self.uri(), other.uri())
+    end
+  }
+
+end
+
+
+fun get-cached-if-available(cache-manager, basedir, loc) block:
+  get-cached-if-available-known-mtimes(cache-manager, basedir, loc, [SD.string-dict:])
 end
 fun get-cached-if-available-known-mtimes(basedir, loc, max-dep-times) block:
   saved-path = Filesystem.join(basedir, uri-to-path(loc.uri(), loc.name()))
@@ -200,31 +281,31 @@ fun get-file-locator(basedir, real-path):
   get-cached-if-available(basedir, loc)
 end
 
-fun get-builtin-locator(basedir, read-only-basedirs, modname):
+fun file-get-builtin-locator(cache-manager, basedir, read-only-basedirs, modname):
   all-dirs = read-only-basedirs
 
   first-available = for find(rob from all-dirs):
-    is-some(cached-available(rob, "builtin://" + modname, modname, 0))
+    is-some(cache-manager.available(rob, "builtin://" + modname, modname, 0))
   end
   cases(Option) first-available:
     | none =>
       cases(Option) BL.maybe-make-builtin-locator(modname) block:
         | some(loc) =>
-          get-cached-if-available(basedir, loc)
+          cache-manager.get-if-available(basedir, loc)
         | none =>
           raise("Could not find builtin module " + modname + " in any of " + all-dirs.join-str(", "))
       end
     | some(ro-basedir) =>
-      ca = cached-available(ro-basedir, "builtin://" + modname, modname, 0).or-else(split)
-      get-cached(ro-basedir, "builtin://" + modname, modname, ca)
+      ca = cache-manager.available(ro-basedir, "builtin://" + modname, modname, 0).or-else(split)
+      cache-manager.get(ro-basedir, "builtin://" + modname, modname, ca)
   end
 end
 
-fun get-builtin-test-locator(basedir, modname):
+fun get-builtin-test-locator(cache-manager, basedir, modname):
   loc = BL.make-builtin-locator(modname).{
     method uri(_): "builtin-test://" + modname end
   }
-  get-cached-if-available(basedir, loc)
+  cache-manager.get-cached-if-available(basedir, loc)
 end
 
 fun get-loadable(basedir, read-only-basedirs, l, max-dep-times) -> Option<Loadable>:
@@ -296,6 +377,7 @@ fun set-loadable(basedir, locator, loadable) -> String block:
 end
 
 type CLIContext = {
+  cache-manager :: CacheManger,
   current-load-path :: String,
   cache-base-dir :: String,
   url-file-mode :: CS.UrlFileMode
@@ -418,6 +500,7 @@ fun compile(path, options):
     cache-base-dir: options.compiled-cache,
     compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
     url-file-mode: options.url-file-mode
+    # TODO: thread cache-manager
   }, base-module)
   wl = CL.compile-worklist(module-finder, base.locator, base.context)
   compiled = CL.compile-program(wl, options)
@@ -461,9 +544,33 @@ fun run(path, options, subsequent-command-line-arguments):
   end
 end
 
+fun make-file-cache() -> CacheManger:
+  {
+    cached-available: file-cached-available,
+    get-cached: file-get-cached,
+    # TODO
+  }
+end
+
+fun make-in-memory-cache() -> CacheManger:
+  store = [SD.mutable-string-dict:]
+
+  {
+    cached-available: mem-cached-available(store, _, _, _, _),
+    get-cached: mem-get-cached(store, _, _, _, _),
+    # TODO
+  }
+end
+
 fun build-program(path, options, stats) block:
   doc: ```Returns the program as a JavaScript AST of module list and dependency map,
           and its native dependencies as a list of strings```
+
+  cache-manager = if options.lsp:
+    make-in-memory-cache()
+  else:
+    make-file-cache()
+  end
 
   print-progress-clearing = lam(s, to-clear):
     when options.display-progress:
