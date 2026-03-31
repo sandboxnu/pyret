@@ -1,0 +1,62 @@
+= README
+
+Goal: Converting pyret-docs from Scribble to Pollen.
+
+Also: Controlling https://getbootstrap.com[Bootstrap Web Framework] elements from Pollen.
+
+== Where (the repos)
+
+The Pollenized Pyret docs, along with its tailormade Pollen
+macro files, are currently in the `new-docs` subdirectory of the
+repo https://github.com/sandboxnu/pyret, in the branch `sandbox`.
+
+The source docs may be browsed at
+
+  https://github.com/sandboxnu/pyret/tree/sandbox/new-docs
+
+It uses general (i.e., non Pyret-doc-specific) Pollen extensions
+from the repo https://github.com/ds26gte/pollenboots. (This repo
+needs to move to a more canonical location.)
+
+The HTML-rendered version of the Pollenized Pyret doc is at
+https://ds26gte.github.io/pyret-docs-pb/index.html. It should be
+viewable on both large screen and phones.
+
+== How
+
+- Ensure you have Racket installed on your computer
+- Ensure you have the Pollen package installed: `raco pkg install --auto pollen`
+- Clone this repo: i.e., `git clone https://github.com/sandboxnu/pyret`
+- Ensure you're on the `sandbox` branch of the repo
+- `cd` to the directory `new-docs`
+- Type `make` to create the HTML pages locally
+- Browse the created `index.html`
+
+While you can directly bring up `index.html` on your web browser,
+in order to get the Pyret embeds working, you will need to serve
+the pages via an http server, e.g., the NPM `http-server`:
+
+  http-server -p 3000 --cors
+
+Browse to http://localhost:3000
+
+== What
+
+https://docs.racket-lang.org/pollen[Pollen] allows the use of
+Racket to create complicated Web pages in particular, and also
+other outputs. Since Bootstrap seems to be HTML only, we'll
+restrict ourselves to HTML. However, our source is in `poly`
+format, so we could go to other output formats if needed.
+
+We will use the general Pollen enhancement files from
+https://github.com/ds26gte/pollenboots to allow a more flexible
+input style, viz., with blank lines signifying paragraph separation,
+automatic conversion to smart quotes and dashes, automatic
+creation of external title. (Very likely others as we learn more.)
+
+Pollen enhancements that are peculiar to the Pyret docs are
+included alongside the source for the docs, i.e., in the new-docs
+subdirectory.
+
+The file index.ptree is a _page tree_ of the various document
+files, in the preferred order.
