@@ -21,9 +21,12 @@
             (a ([class "show-embed"]
                 [code ,(string-join elems " ")])
                "(Try it!)"))
-      `(div ()
-            (p () (b () "Examples:"))
-            (pre ([class "pyret-highlight"]) ,@elems))))
+      (let ()
+        (define elem-string (apply string-append elems))
+        (printf "WARNING: examples ~s missing try-it in ~a\n" elem-string (calc-here-path-from-project-root))
+        `(div ()
+              (p () (b () "Examples:"))
+              (pre ([class "pyret-highlight"]) ,@elems)))))
 
 (define (verbatim #:style [style "nothing_special"] #:show-try-it [show-try-it #f] . elems)
   ; (printf "@@@ doing verbatim ~s\n" elems)
