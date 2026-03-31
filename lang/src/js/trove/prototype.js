@@ -1,15 +1,4 @@
 /**
- * flow:
- * 1. take in a function
- * 2. apply f(x) to each x (abstracted and will be done in Pyret)
- * 3. compute loss over each interval
- * 4. split interval w/ highest loss in half
- * 5. recompute losses
- * Stopping condition: threshold, numSamples
- * To do: how to decide which loss function for a given f
- */
-
-/**
  * Euclidean distance between two points
  * @param {[number, number]} xs - a pair of x-values
  * @param {[number, number]} ys - a corresponding pair of y-values
@@ -19,6 +8,29 @@ function defaultLoss(xs, ys) {
     const dx = xs[1] - xs[0];
     const dy = ys[1] - ys[0];
     return Math.hypot(dx, dy);
+}
+
+/**
+ * Distance between two x-values
+ * @param {[number, number]} xs - a pair of x-values
+ * @param {[number, number]} ys - unused (only passed in for consistency with other loss functions)
+ * @returns {number} - the loss for the interval
+ */
+function uniformLoss(xs, ys) {
+    return xs[1] - xs[0];
+}
+
+/**
+ * Penalizes y-values close to 0
+ * @param {[number, number]} xs - a pair of x-values
+ * @param {[number, number]} ys - a corresponding pair of y-values
+ * @returns {number} - the loss for the interval
+ */
+function absMinLogLoss(xs, ys) {
+    // bound the transformed y-value in case y = 0
+    const lowerBound = -1e12;
+    const ysLog = ys.map(y => Math.max(lowerBound, Math.log(Math.abs(y))));
+    return defaultLoss(xs, ysLog);
 }
 
 function AdaptiveSampler(f, xMinValue, xMaxValue, lossFunction, numSamples) {
@@ -52,6 +64,7 @@ function AdaptiveSampler(f, xMinValue, xMaxValue, lossFunction, numSamples) {
     };
 
     // get the interval with the max loss
+    // TODO: handling multiple intervals with the same max loss (particularly important for uniform loss)
     this.getMaxLoss = function() {
         let maxLoss = -Infinity;
         let maxInterval = null;
@@ -77,6 +90,8 @@ function AdaptiveSampler(f, xMinValue, xMaxValue, lossFunction, numSamples) {
         this.pending.push([l, m], [m, r]);
     };
 
+    // runs the adaptive sampler
+    // TODO: adding different stopping conditions
     this.runner = function() {
         this.initData();
         this.computeLosses();
@@ -89,12 +104,11 @@ function AdaptiveSampler(f, xMinValue, xMaxValue, lossFunction, numSamples) {
 }
 
 // testing
-const learner = new AdaptiveSampler(x => x**2, 2, 5, defaultLoss, 10);
+// const learner = new AdaptiveSampler(x => x**2, 0, 5, absMinLogLoss, 10);
 // learner.initData();
 // learner.computeLosses();
 // console.log(learner.data, learner.pending, learner.lossManager);
 // const result = learner.getMaxLoss();
 // learner.splitInterval(result.maxInterval, result.maxIndex);
+// learner.runner()
 // console.log(learner.data, learner.pending, learner.lossManager);
-learner.runner()
-console.log(learner.data, learner.pending, learner.lossManager);
