@@ -13,14 +13,27 @@
 (define (tt . elems)
   `(tt () ,@elems))
 
+(define (save-example-to-file strs file)
+  (call-with-output-file file
+    (lambda (o)
+      (fprintf o "# example in ~s, saved to ~s\n" (calc-here-path-from-project-root) file)
+      (for ([str strs])
+        (display str o)))
+    #:exists 'replace))
+
+(define get-examples-count (make-counter))
+
 (define (examples #:show-try-it [show-try-it #t] . elems)
   (if show-try-it
-      `(div ()
-            (p () (b () "Examples:"))
-            (pre ([class "pyret-highlight"]) ,@elems)
-            (a ([class "show-embed"]
-                [code ,(string-join elems " ")])
-               "(Try it!)"))
+      (let ()
+        (define file (format ".examples-~a.arr" (get-examples-count)))
+        (save-example-to-file elems file)
+        `(div ()
+              (p () (b () "Examples:"))
+              (pre ([class "pyret-highlight"]) ,@elems)
+              (a ([class "show-embed"]
+                  [code ,(string-join elems " ")])
+                 "(Try it!)")))
       (let ()
         (define elem-string (apply string-append elems))
         (printf "WARNING: examples ~s missing try-it in ~a\n" elem-string (calc-here-path-from-project-root))
