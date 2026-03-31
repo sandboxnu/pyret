@@ -1,0 +1,128 @@
+= Convert pyret-docs from Scribble to Pollen
+
+Pollen additions repo:
+- https://github.com/ds26gte/pollenboots
+
+Pyret docs source repo:
+- https://github.com/ds26gte/pyret-docs-pb
+
+Rendered Pyret docs:
+- https://ds26gte.github.com/pyret-docs-db/index.html
+
+== CSS, Codemirror
+
+These things can mostly go over with minor changes. (I did need to
+make some changes, especially: url(pathnames) and swatches.) We
+can add new CSS such Bootstrap Web Framework, and in particular
+make the output device-dependent, e.g., make it look reasonably
+good on mobile devices. Generally, very welcoming to arbitrary
+CSS, so a style expert can focus on this ignoring all the
+rest.
+
+== Source
+
+Source can mostly go over, with two caveats: (i) A minor one is
+that the directive character changes from @ to ◊. (ii) The bigger one
+is that the several Scribble directives have to be re-written in a
+way that suits Pollen. Pollen works with txexprs (tagged
+x-expressions) and they are s-exp versions of HTML tags plus
+user-defined tags. The Pollen rendering takes care of expanding
+these all out to final HTML tags.
+
+These additions can mostly be accomplished in Racket files outside
+the source.
+
+NOTE: Scribble allows writing some of its definitions in-source.
+Pollen does too.
+
+== Writing Pollen directives
+
+Pollen directives have to expand to txexprs (always ?)
+-- although they can have side-effects, useful for (i) debugging,
+and (ii) creating temp files.
+
+There are quite a few built-ins that Scribble provides for
+pleasant structured writing, automatically calculating cross
+references, table of contents, glossaries. These have to be
+written from scratch in Pollen. This may seem like a negative, but
+it also gives us fine control on how they should be defined,
+instead of accepting Scribble's opinion on them.
+
+== The Pollen way
+
+Pollen rendering works by creating a root txexpr out of every
+document file, and since this is a Racket object, we can apply
+filters or "handlers" to them to massage them in a way we like.
+E.g., we can have a filter that takes a document txexpr and treats
+linebreaks correctly, so that a single linebreak becomes a soft
+linebreak and a multiple linebreak becomes a paragraph separator.
+Since this is such a common use-case, we can use a `decode`
+function with appropriate keyword arguments for this, so it hardly
+merits the name of a filter.
+
+More substantial filters involve the cross-references, ToC, and
+glossary I mentioned earlier. These I've written in separate Racket
+files for maintenance, and these filters are cascaded together,
+i.e., the output from one filter becomes the input to another
+filter. My three big filters reside in the Racket files
+make-xref.rkt, make-toc.rkt, make-glossary.rkt.
+
+== The document tree
+
+The author-facing doctree looks like this: A doctree of *.poly.pm
+files containing the content. There is no limitation on how you
+want to structure them into files and directories, so you can use
+what is best for you.
+
+Each of the *.poly.pm file is really a Racket file, but with an
+opening module `#lang pollen`. The rest is Pollen prose, i.e.,
+regular prose plus ◊directives.
+
+Authors need only concern themselves with adding and modifying
+these *.poly.pm files and the index.ptree file.
+
+=== Two repos
+
+I've created two repos: (i) One is pollenboots that contains the
+Pollen support files (rkt, css, js), and (ii) the other is
+pyret-docs-db that is exclusively the Pyret Docs content. The
+pyret-docs-db repo loads the pollenboots repo (via make). Authors
+need focus only on pyret-docs-db.
+
+=== index.ptree
+
+At the top of the doctree, we have a file index.ptree that
+specifies these various files in the order you want them.
+
+=== pollen.rkt
+
+This top directory also contains a pollen.rkt file, which is the
+Racket file that is loaded by Pollen when rendering the doc files.
+The pollen.rkt can of course load other Racket files as we find
+convenient. We have several, (i) to define directives, and (ii) to
+define the filters. pollen.rkt has a specific root function that
+can call these filters.
+
+=== template.html.p
+
+A final general file is template.html.p, which Pollen uses to
+guide the overall structure of the HTML target file. This is
+mostly about the big enclosing tags -- html, head, body, CSS links
+and JS scripts, navigation bars, etc., things that aren't and
+shouldn't be part of the *.poly.pm files, which are pure,
+authored, content.
+
+=== Makefile
+
+A Makefile lets a user simply use make to trigger the pollen
+rendering, without having to know the pollen calling syntax, and
+how many times Pollen needs to be called. I do use temporary files
+to store cross-referencing information, so one call of Pollen can
+store global reference info that a subsequent call of Pollen can
+pick up. Typically, Pollen needs to be called 3x so that all
+cross-references are resolved.
+
+NOTE: You may think this should be 2x, and that would indeed be
+nice, but the postlude that writes the temp file unfortunately is
+"content", and happens before all the filters are done. May still
+be salvageable with some kludgey coding, if we really care.
