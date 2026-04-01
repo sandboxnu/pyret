@@ -50,8 +50,7 @@
 				"icon": {
 					"light": "./media/icons/jarr.svg",
 					"dark": "./media/icons/jarr.svg"
-				},
-				"configuration": "./language-configuration.json"
+				}
 			}
 		],
 		"grammars": [
