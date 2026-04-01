@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require "pollenboots/utils.rkt")
+(require "pyret-docs.rkt")
 
 (provide (all-defined-out))
 

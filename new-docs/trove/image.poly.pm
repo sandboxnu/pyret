@@ -13,18 +13,14 @@
 ◊(define (draw-pinhole x y img #:color [c 'black])
    (overlay/offset (overlay (line 10 0 c) (line 0 10 c)) x y img))
 
-◊(define counter 0)
-
-◊(define (get-counter)
-  (set! counter (+ counter 1))
-  counter)
+◊(define get-image-count (make-counter))
 
 ◊(define (image-2 image-obj)
          ◊; (printf "*** image-2 ~s\n" image-obj)
          (if (= (image-width image-obj) 0)
              `(span () "")
              (let ()
-               (define file (format ".image-~a.png" (get-counter)))
+               (define file (format ".image-~a.png" (get-image-count)))
                (save-image image-obj file)
                `(img ([src ,file])))))
 
