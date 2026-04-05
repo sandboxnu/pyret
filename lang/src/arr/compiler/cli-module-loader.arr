@@ -569,7 +569,18 @@ fun make-file-cache() -> CacheManger:
   {
     cached-available: file-cached-available,
     get-cached: file-get-cached,
-    # TODO
+    method get-cached-if-available(self, basedir, loc):
+      get-cached-if-available(self, basedir, loc)
+    end,
+    method get-loadable(self, basedir, read-only-basedirs, l, max-dep-times):
+      get-loadable(self, basedir, read-only-basedirs, l, max-dep-times)
+    end,
+    method set-loadable(self, basedir, locator, loadable):
+      set-loadable(basedir, locator, loadable)
+    end,
+    method get-builtin-locator(self, basedir, read-only-basedirs, modname):
+      file-get-builtin-locator(self, basedir, read-only-basedirs, modname)
+    end,
     method set-surface-ast(self, _, _): nothing end,
     method get-surface-ast(self, _): none end,
     method set-named-result(self, _, _): nothing end,
@@ -579,24 +590,69 @@ end
 
 fun make-in-memory-cache() -> CacheManger:
   store = [SD.mutable-string-dict:]
-  ast-store = [SD.mutable-string-dict:]
-  named-result-store = [SD.mutable-string-dict:]
+
+  fun get-entry(uri):
+    store.get-now(uri)
+  end
+
+  fun update-entry(uri, updater):
+    existing = cases(Option) store.get-now(uri):
+      | some(v) => v
+      | none => { surface-ast: none, named-result: none, loadable: none }
+    end
+    store.set-now(uri, updater(existing))
+  end
 
   {
-    cached-available: mem-cached-available(store, _, _, _, _),
+    cached-available: lam(_, uri, _, _):
+      if store.has-key-now(uri): some(nothing) else: none end
+    end,
     get-cached: mem-get-cached(store, _, _, _, _),
-    # TODO
+    method get-cached-if-available(self, _, loc):
+      if store.has-key-now(loc.uri()):
+        self.get-cached("", loc.uri(), loc.name(), nothing).{
+          method get-uncached(_): some(loc) end
+        }
+      else:
+        cases(Option) loc.get-uncached():
+          | some(shadow loc) => loc
+          | none => loc
+        end
+      end
+    end,
+    method get-loadable(self, _, _, l, _):
+      cases(Option) get-entry(l.locator.uri()):
+        | some(e) => e.loadable
+        | none => none
+      end
+    end,
+    method set-loadable(self, _, locator, loadable) block:
+      update-entry(locator.uri(), lam(e): e.{loadable: some(loadable)} end)
+      locator.uri()
+    end,
+    # TODO: special-case builtins — they're pre-compiled on disk and we
+    # don't want to recompile from source on every request. For now this
+    # falls through to source compilation when the store is empty.
+    method get-builtin-locator(self, basedir, read-only-basedirs, modname):
+      file-get-builtin-locator(self, basedir, read-only-basedirs, modname)
+    end,
     method set-surface-ast(self, uri, ast):
-      ast-store.set-now(uri, ast)
+      update-entry(uri, lam(e): e.{surface-ast: some(ast)} end)
     end,
     method get-surface-ast(self, uri):
-      ast-store.get-now(uri)
+      cases(Option) get-entry(uri):
+        | some(e) => e.surface-ast
+        | none => none
+      end
     end,
     method set-named-result(self, uri, named-result):
-      named-result-store.set-now(uri, named-result)
+      update-entry(uri, lam(e): e.{named-result: some(named-result)} end)
     end,
     method get-named-result(self, uri):
-      named-result-store.get-now(uri)
+      cases(Option) get-entry(uri):
+        | some(e) => e.named-result
+        | none => none
+      end
     end,
   }
 end
