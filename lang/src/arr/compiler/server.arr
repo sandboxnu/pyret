@@ -9,6 +9,7 @@ import js-file("server") as S
 import file("./cli-module-loader.arr") as CLI
 import file("./compile-structs.arr") as CS
 import file("./compile-lib.arr") as CL
+import file("./lsp.arr") as LSP
 import file("locators/builtin.arr") as B
 
 fun compile(options):
@@ -42,8 +43,6 @@ fun compile(options):
       user-annotations: options.get("user-annotations").or-else(compile-opts.user-annotations)
     })
 end
-
-# TODO: hook upto jumpto def......
 
 fun serve(port, pyret-dir):
   S.make-server(port, lam(cmd, msg, send-message) block:
@@ -115,6 +114,7 @@ fun serve(port, pyret-dir):
         line = options.get-value("line")
         col = options.get-value("col")
         shadow pyret-dir = options.get-value("this-pyret-dir")
+        cache-manager = CLI.make-in-memory-cache()
         compile-opts = CS.make-default-compile-options(pyret-dir).{
           base-dir: options.get("base-dir").or-else(P.resolve(".")),
           this-pyret-dir: pyret-dir,
@@ -138,15 +138,8 @@ fun serve(port, pyret-dir):
         end
         starter-modules = CL.modules-from-worklist(wl,
           CLI.get-loadable(compile-opts.compiled-cache, compile-opts.compiled-read-only.map(P.resolve), _, _))
-        compiled = CL.compile-program-with(wl, starter-modules, compile-opts)
-        # find the worklist entry for the requested file
-        base-wl-entry = for find(entry from wl):
-          entry.locator.uri() == base.locator.uri()
-        end.value
-        provide-map = for fold(acc from SD.make-string-dict(), k from base-wl-entry.dependency-map.keys-now().to-list()):
-          acc.set(k, base-wl-entry.dependency-map.get-value-now(k).uri())
-        end
-        CL.jump-to-def(base.locator, provide-map, compiled.modules, compile-opts, line, col)
+        compiled = CL.compile-program-with(wl, starter-modules, compile-opts, cache-manager)
+        LSP.jump-to-def(cache-manager, base.locator.uri(), line, col)
       end)
       cases(E.Either) result block:
         | right(exn) =>

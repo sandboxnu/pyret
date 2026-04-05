@@ -257,7 +257,7 @@ end
 
 type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableStringDict<Loadable>}
 
-fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> CompiledProgram block:
+fun compile-program-with(worklist :: List<ToCompile>, modules, options, cache-manager) -> CompiledProgram block:
   cache = modules
   loadables = for map(w from worklist):
     uri = w.locator.uri()
@@ -267,7 +267,7 @@ fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> Compi
           lam(_, v): v.uri() end
       )
       options.before-compile(w.locator)
-      {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
+      {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options, cache-manager)
       # I feel like here we want to generate two copies of the loadable:
       # - One local for calling on-compile with and serializing
       # - One canonicalized for the local cache
@@ -285,8 +285,8 @@ fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> Compi
   { loadables: loadables, modules: cache }
 end
 
-fun compile-program(worklist, options):
-  compile-program-with(worklist, SD.make-mutable-string-dict(), options)
+fun compile-program(worklist, options, cache-manager):
+  compile-program-with(worklist, SD.make-mutable-string-dict(), options, cache-manager)
 end
 
 fun is-builtin-module(uri :: String) -> Boolean:
@@ -297,7 +297,7 @@ fun unique(lst):
   sets.list-to-list-set(lst).to-list()
 end
 
-fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, options) -> {Loadable; List} block:
+fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, modules, options, cache-manager) -> {Loadable; List} block:
   doc: ```
     Invariant: provide-map maps dependency keys to URIs
     which ALL must be keys in modules.
@@ -324,6 +324,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
         | pyret-ast(module-ast) =>
           module-ast
       end
+      cache-manager.set-surface-ast(locator.uri(), ast)
       var ret = start(time-now())
       fun add-phase(name, value) block:
         if options.collect-all:
@@ -388,6 +389,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
             var desugared = D.desugar(spied)
             spied := nothing
             named-result.env.bindings.merge-now(desugared.new-binds)
+            cache-manager.set-named-result(locator.uri(), named-result)
             # ...in order to be checked for bad assignments here
             any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
             add-phase("Fully desugared", desugared.ast)
@@ -477,12 +479,12 @@ fun run-program(ws :: List<ToCompile>, prog :: CompiledProgram, realm :: L.Realm
   end
 end
 
-fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-modules, options) block:
+fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-modules, options, cache-manager) block:
   #print("Make worklist\n")
   wl = compile-worklist(finder, locator, context)
   #print("Compile program\n")
 
-  compiled = compile-program-with(wl, starter-modules, options)
+  compiled = compile-program-with(wl, starter-modules, options, cache-manager)
   compiled-mods = compiled.loadables
   errors = compiled-mods.filter(is-error-compilation)
   cases(List) errors block:
@@ -501,8 +503,8 @@ fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-mo
   end
 end
 
-fun compile-standalone(wl, starter-modules, options):
-  compiled = compile-program-with(wl, starter-modules, options)
+fun compile-standalone(wl, starter-modules, options, cache-manager):
+  compiled = compile-program-with(wl, starter-modules, options, cache-manager)
   make-standalone(wl, compiled, options)
 end
 

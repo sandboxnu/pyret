@@ -95,7 +95,11 @@ type CacheManger = {
   get-cached-if-available :: ( ... -> ...),
   get-loadable :: (... -> ...),
   set-loadable :: (... -> ...),
-  get-builtin-locator :: (... -> ...)
+  get-builtin-locator :: (... -> ...),
+  set-surface-ast :: (String, Any -> Nothing),
+  get-surface-ast :: (String -> Option<Any>),
+  set-named-result :: (String, Any -> Nothing),
+  get-named-result :: (String -> Option<Any>)
 }
 
 # NOTE(joe): This is just a little one-off type to represent a simple
@@ -509,16 +513,16 @@ default-test-context = {
 }
 
 fun compile(path, options):
+  cache-manager = make-file-cache()
   base-module = CS.dependency("file", [list: path])
   base = module-finder({
     current-load-path: Filesystem.resolve(options.base-dir),
     cache-base-dir: options.compiled-cache,
     compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
     url-file-mode: options.url-file-mode
-    # TODO: thread cache-manager
   }, base-module)
   wl = CL.compile-worklist(module-finder, base.locator, base.context)
-  compiled = CL.compile-program(wl, options)
+  compiled = CL.compile-program(wl, options, cache-manager)
   compiled
 end
 
@@ -564,16 +568,34 @@ fun make-file-cache() -> CacheManger:
     cached-available: file-cached-available,
     get-cached: file-get-cached,
     # TODO
+    method set-surface-ast(self, _, _): nothing end,
+    method get-surface-ast(self, _): none end,
+    method set-named-result(self, _, _): nothing end,
+    method get-named-result(self, _): none end,
   }
 end
 
 fun make-in-memory-cache() -> CacheManger:
   store = [SD.mutable-string-dict:]
+  ast-store = [SD.mutable-string-dict:]
+  named-result-store = [SD.mutable-string-dict:]
 
   {
     cached-available: mem-cached-available(store, _, _, _, _),
     get-cached: mem-get-cached(store, _, _, _, _),
     # TODO
+    method set-surface-ast(self, uri, ast):
+      ast-store.set-now(uri, ast)
+    end,
+    method get-surface-ast(self, uri):
+      ast-store.get-now(uri)
+    end,
+    method set-named-result(self, uri, named-result):
+      named-result-store.set-now(uri, named-result)
+    end,
+    method get-named-result(self, uri):
+      named-result-store.get-now(uri)
+    end,
   }
 end
 
@@ -661,7 +683,7 @@ fun build-program(path, options, stats) block:
       end
     end
   }
-  ans = CL.compile-standalone(wl, starter-modules, options)
+  ans = CL.compile-standalone(wl, starter-modules, options, cache-manager)
   ans
 end
 
