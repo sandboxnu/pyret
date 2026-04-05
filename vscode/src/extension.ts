@@ -20,7 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const serverModule = context.asAbsolutePath(
-    path.join("..", "lsp-ts", "out", "server-node-tmp.js"),
+    path.join("..", "lsp", "out", "server-node-tmp.js"),
   );
   const debugOptions = { execArgv: ["--nolazy", "--inspect=6009"] };
   const outputChannel = vscode.window.createOutputChannel(
