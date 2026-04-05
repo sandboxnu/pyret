@@ -123,6 +123,7 @@ fun serve(port, pyret-dir):
           display-progress: false,
           log: lam(s, _): nothing end,
           log-error: err,
+          cache-manager: cache-manager,
         }
         base-module = CS.dependency("file", [list: program])
         base = CLI.module-finder({
@@ -138,8 +139,8 @@ fun serve(port, pyret-dir):
         end
         starter-modules = CL.modules-from-worklist(wl,
           CLI.get-loadable(compile-opts.compiled-cache, compile-opts.compiled-read-only.map(P.resolve), _, _))
-        compiled = CL.compile-program-with(wl, starter-modules, compile-opts, cache-manager)
-        LSP.jump-to-def(cache-manager, base.locator.uri(), line, col)
+        compiled = CL.compile-program-with(wl, starter-modules, compile-opts)
+        LSP.jump-to-def(compile-opts.cache-manager, base.locator.uri(), line, col)
       end)
       cases(E.Either) result block:
         | right(exn) =>

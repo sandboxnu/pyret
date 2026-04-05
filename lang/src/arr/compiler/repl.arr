@@ -11,7 +11,6 @@ import file("./ast-util.arr") as U
 import file("./resolve-scope.arr") as RN
 import file("./compile-structs.arr") as CS
 import file("./compile-lib.arr") as CL
-import file("./cli-module-loader.arr") as CLI
 import file("./type-structs.arr") as TS
 import file("./ast-util.arr") as AU
 
@@ -101,7 +100,7 @@ fun make-repl<a>(
 
   fun run-interaction(locator :: CL.Locator) block:
     worklist = CL.compile-worklist-known-modules(finder, locator, compile-context, current-modules)
-    compiled = CL.compile-program-with(worklist, current-modules, current-compile-options, CLI.make-file-cache())
+    compiled = CL.compile-program-with(worklist, current-modules, current-compile-options)
     for SD.each-key-now(k from compiled.modules) block:
       current-modules.set-now(k, compiled.modules.get-value-now(k))
     end

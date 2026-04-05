@@ -513,7 +513,6 @@ default-test-context = {
 }
 
 fun compile(path, options):
-  cache-manager = make-file-cache()
   base-module = CS.dependency("file", [list: path])
   base = module-finder({
     current-load-path: Filesystem.resolve(options.base-dir),
@@ -522,7 +521,7 @@ fun compile(path, options):
     url-file-mode: options.url-file-mode
   }, base-module)
   wl = CL.compile-worklist(module-finder, base.locator, base.context)
-  compiled = CL.compile-program(wl, options, cache-manager)
+  compiled = CL.compile-program(wl, options)
   compiled
 end
 
@@ -603,11 +602,13 @@ fun build-program(path, options, stats) block:
   doc: ```Returns the program as a JavaScript AST of module list and dependency map,
           and its native dependencies as a list of strings```
 
-  cache-manager = if options.lsp:
-    make-in-memory-cache()
-  else:
-    make-file-cache()
-  end
+  shadow options = options.{
+    cache-manager: if options.lsp:
+      make-in-memory-cache()
+    else:
+      make-file-cache()
+    end
+  }
 
   print-progress-clearing = lam(s, to-clear):
     when options.display-progress:
@@ -683,7 +684,7 @@ fun build-program(path, options, stats) block:
       end
     end
   }
-  ans = CL.compile-standalone(wl, starter-modules, options, cache-manager)
+  ans = CL.compile-standalone(wl, starter-modules, options)
   ans
 end
 
