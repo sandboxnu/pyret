@@ -630,9 +630,10 @@ fun make-in-memory-cache() -> CacheManger:
       update-entry(locator.uri(), lam(e): e.{loadable: some(loadable)} end)
       locator.uri()
     end,
-    # TODO: special-case builtins — they're pre-compiled on disk and we
-    # don't want to recompile from source on every request. For now this
-    # falls through to source compilation when the store is empty.
+    # TODO: builtins should be loaded into the in-memory store rather than
+    # going through file-based lookup. Blocked on having a serialization
+    # format for Loadable that doesn't depend on the JS file infrastructure
+    # (builtin-raw-locator / -static.js / -module.js).
     method get-builtin-locator(self, basedir, read-only-basedirs, modname):
       file-get-builtin-locator(self, basedir, read-only-basedirs, modname)
     end,
