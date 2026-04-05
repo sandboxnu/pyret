@@ -45,6 +45,7 @@ fun compile(options):
 end
 
 fun serve(port, pyret-dir):
+  cache-manager = CLI.make-in-memory-cache()
   S.make-server(port, lam(cmd, msg, send-message) block:
     # print("Got message in pyret-land: " + msg)
     opts = J.read-json(msg).native()
@@ -114,7 +115,6 @@ fun serve(port, pyret-dir):
         line = options.get-value("line")
         col = options.get-value("col")
         shadow pyret-dir = options.get-value("this-pyret-dir")
-        cache-manager = CLI.make-in-memory-cache()
         compile-opts = CS.make-default-compile-options(pyret-dir).{
           base-dir: options.get("base-dir").or-else(P.resolve(".")),
           this-pyret-dir: pyret-dir,
