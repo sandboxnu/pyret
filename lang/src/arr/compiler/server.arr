@@ -124,6 +124,10 @@ fun serve(port, pyret-dir):
           log: lam(s, _): nothing end,
           log-error: err,
           cache-manager: cache-manager,
+          method on-compile(self, locator, loadable, _) block:
+            cache-manager.set-loadable("", locator, loadable)
+            loadable
+          end,
         }
         base-module = CS.dependency("file", [list: program])
         base = CLI.module-finder({
@@ -134,12 +138,8 @@ fun serve(port, pyret-dir):
           url-file-mode: compile-opts.url-file-mode
         }, base-module)
         wl = CL.compile-worklist(CLI.module-finder, base.locator, base.context)
-        max-dep-times = CL.dep-times-from-worklist(wl)
-        shadow wl = for map(located from wl):
-          located.{ locator: CLI.get-cached-if-available-known-mtimes(compile-opts.cache-manager, compile-opts.compiled-cache, located.locator, max-dep-times) }
-        end
         starter-modules = CL.modules-from-worklist(wl,
-          CLI.get-loadable(compile-opts.cache-manager, compile-opts.compiled-cache, compile-opts.compiled-read-only.map(P.resolve), _, _))
+          lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
         compiled = CL.compile-program-with(wl, starter-modules, compile-opts)
         LSP.jump-to-def(compile-opts.cache-manager, base.locator.uri(), line, col)
       end)

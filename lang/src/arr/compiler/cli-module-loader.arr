@@ -205,59 +205,57 @@ fun file-get-cached(basedir, uri, name, cache-type):
   }
 end
 
-fun mem-get-cached(store, basedir, uri, name, _):
-  key = basedir + uri + name
+fun mem-get-cached(store, _, uri, name, _):
   {
     method get-uncached(_): none end,
     method needs-compile(_, _): false end,
-    method get-modified-time(self):
-      0
-    end,
-    method get-options(self, options):
-      options.{ checks: "none" }
-    end,
+    method get-modified-time(_): 0 end,
+    method get-options(_, options): options.{ checks: "none" } end,
     method get-module(_):
-      raise("Should never fetch source for builtin module " + key)
+      cases(Option) store.get-now(uri):
+        | some(entry) =>
+          cases(Option) entry.surface-ast:
+            | some(ast) => CL.pyret-ast(ast)
+            | none => raise("No cached source for module " + uri)
+          end
+        | none => raise("No cached source for module " + uri)
+      end
     end,
-    method get-extra-imports(self):
-      CS.standard-imports
+    method get-extra-imports(_):
+      if CL.is-builtin-module(uri): CS.minimal-imports
+      else: CS.standard-imports
+      end
     end,
     method get-dependencies(_):
-      # deps = raw.get-raw-dependencies()
-      # raw-array-to-list(deps).map(CS.make-dep)
-      ...
+      cases(Option) store.get-now(uri):
+        | some(entry) =>
+          cases(Option) entry.surface-ast:
+            | some(ast) =>
+              if CL.is-builtin-module(uri):
+                CL.get-dependencies(CL.pyret-ast(ast), uri)
+              else:
+                CL.get-standard-dependencies(CL.pyret-ast(ast), uri)
+              end
+            | none => empty
+          end
+        | none => empty
+      end
     end,
-    method get-native-modules(_):
-      # natives = raw.get-raw-native-modules()
-      # raw-array-to-list(natives).map(CS.requirejs)
-      ...
-    end,
-    method get-globals(_):
-      CS.standard-globals
-    end,
-
+    method get-native-modules(_): [list:] end,
+    method get-globals(_): CS.standard-globals end,
     method uri(_): uri end,
     method name(_): name end,
-
     method set-compiled(_, _, _): nothing end,
-    method get-compiled(self):
-      # provs = CS.provides-from-raw-provides(self.uri(), {
-      #     uri: self.uri(),
-      #     values: raw-array-to-list(raw.get-raw-value-provides()),
-      #     aliases: raw-array-to-list(raw.get-raw-alias-provides()),
-      #     datatypes: raw-array-to-list(raw.get-raw-datatype-provides()),
-      #     modules: raw-array-to-list(raw.get-raw-module-provides())
-      #   })
-      # some(CL.module-as-string(provs, CS.no-builtins, CS.computed-none,
-      #     CS.ok(JSP.ccp-file(Filesystem.resolve(module-path + ".js")))))
-      ...
+    method get-compiled(_):
+      cases(Option) store.get-now(uri):
+        | some(entry) => entry.loadable
+        | none => none
+      end
     end,
-
     method _equals(self, other, req-eq):
       req-eq(self.uri(), other.uri())
     end
   }
-
 end
 
 
