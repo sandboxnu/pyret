@@ -324,6 +324,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
         | pyret-ast(module-ast) =>
           module-ast
       end
+      options.cache-manager.set-surface-ast(locator.uri(), ast)
       var ret = start(time-now())
       fun add-phase(name, value) block:
         if options.collect-all:
@@ -388,6 +389,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
             var desugared = D.desugar(spied)
             spied := nothing
             named-result.env.bindings.merge-now(desugared.new-binds)
+            options.cache-manager.set-named-result(locator.uri(), named-result)
             # ...in order to be checked for bad assignments here
             any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
             add-phase("Fully desugared", desugared.ast)

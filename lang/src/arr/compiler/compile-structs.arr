@@ -2982,7 +2982,13 @@ default-compile-options = {
   deps-file: "build/bundled-node-deps.js",
   standalone-file: "src/js/base/handalone.js",
   url-file-mode: all-remote,
-  lsp: false
+  lsp: false,
+  cache-manager: {
+    method set-surface-ast(self, _, _): nothing end,
+    method get-surface-ast(self, _): none end,
+    method set-named-result(self, _, _): nothing end,
+    method get-named-result(self, _): none end,
+  }
 }
 
 fun make-default-compile-options(this-pyret-dir):

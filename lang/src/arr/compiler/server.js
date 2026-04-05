@@ -118,14 +118,17 @@
           info(`${new Date()} Connection accepted.`);
 
 
-          // TODO: query options, don't run all stages of the compiler, etc
-          // TODO: thread through info
           /**
            * @typedef {{command: 'stop'} |
            *           {command: 'shutdown'} |
            *           {command: 'compile', compileOptions: unknown} |
-           *           {command: 'info', compileOptions: unknown, queryOptions: unknown}}
+           *           {command: 'info', compileOptions: unknown}}
            *  ServerMessage
+           *
+           * For 'info' commands, compileOptions should include an "info-type"
+           * field (e.g. "jump-to-def") that server.arr dispatches on.
+           * NOTE(lsp): No changes needed here for new LSP features — just
+           * add the info-type in server.arr's ask block.
            */
 
           connection.on('message', function(message) {

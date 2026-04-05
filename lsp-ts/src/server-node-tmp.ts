@@ -101,6 +101,7 @@ function shutdownPyretServer(portFile: string): void {
 }
 
 connection.onInitialize(async (_params) => {
+  // NOTE(lsp): Register new LSP capabilities here (e.g. hoverProvider: true)
   const capabilities: ServerCapabilities = {
     textDocumentSync: TextDocumentSyncKind.Incremental,
     definitionProvider: true,
@@ -133,7 +134,14 @@ interface JumpToDefSuccess {
   endColumn: number;
 }
 
-function sendInfoRequest(
+// NOTE(lsp): To add a new LSP feature:
+// 1. Add a send*Request function below (following this pattern)
+// 2. Add a connection.on* handler at the bottom that calls it
+// 3. Register the capability in onInitialize
+// 4. Add an info-type case in server.arr's info handler
+// 5. Add the Pyret-side logic in lsp.arr
+
+function sendJumpToDefRequest(
   portFile: string,
   filePath: string,
   line: number,
@@ -151,7 +159,12 @@ function sendInfoRequest(
     });
 
     client.on("open", () => {
-      const compileOptions = JSON.stringify({ program: filePath, line, col });
+      const compileOptions = JSON.stringify({
+        "info-type": "jump-to-def",
+        program: filePath,
+        line,
+        col,
+      });
       client.send(JSON.stringify({ command: "info", compileOptions }));
     });
 
@@ -209,7 +222,7 @@ connection.onDefinition(async (params) => {
     : fileUri;
 
   try {
-    const result = await sendInfoRequest(portFile, filePath, line, col);
+    const result = await sendJumpToDefRequest(portFile, filePath, line, col);
     if (!result) {
       return null;
     }
