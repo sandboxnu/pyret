@@ -1,5 +1,10 @@
 provide *
 
+# NOTE(lsp): New LSP features go here as functions that take the
+# cache-manager and query parameters, then return results. The
+# cache-manager has surface-ast, named-result, and loadable for every
+# compiled module. See jump-to-def for the pattern.
+
 import either as E
 import srcloc as S
 import file("ast-util.arr") as AU

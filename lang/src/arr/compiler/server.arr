@@ -92,6 +92,44 @@ fun serve(port, pyret-dir):
       end
     with-require-config = with-perilous.set("require-config",
       opts.get("require-config").or-else(P.resolve(P.join(pyret-dir, "config.json"))))
+    # Shared LSP compilation: compiles the given program using the
+    # process-level cache-manager and returns the base URI. After this
+    # call, cache-manager has surface-ast, named-result, and loadable
+    # for every module in the dependency graph.
+    # New LSP features that need compiled state should call this, then
+    # query the cache-manager for whatever they need.
+    fun lsp-compile(options) block:
+      program = options.get-value("program")
+      shadow pyret-dir = options.get-value("this-pyret-dir")
+      compile-opts = CS.make-default-compile-options(pyret-dir).{
+        base-dir: options.get("base-dir").or-else(P.resolve(".")),
+        this-pyret-dir: pyret-dir,
+        compiled-cache: options.get("compiled-dir").or-else("./compiled"),
+        compiled-read-only: options.get-value("compiled-read-only"),
+        display-progress: false,
+        log: lam(s, _): nothing end,
+        log-error: err,
+        cache-manager: cache-manager,
+        method on-compile(self, locator, loadable, _) block:
+          cache-manager.set-loadable("", locator, loadable)
+          loadable
+        end,
+      }
+      base-module = CS.dependency("file", [list: program])
+      base = CLI.module-finder({
+        cache-manager: cache-manager,
+        current-load-path: P.resolve(compile-opts.base-dir),
+        cache-base-dir: compile-opts.compiled-cache,
+        compiled-read-only-dirs: compile-opts.compiled-read-only.map(P.resolve),
+        url-file-mode: compile-opts.url-file-mode
+      }, base-module)
+      wl = CL.compile-worklist(CLI.module-finder, base.locator, base.context)
+      starter-modules = CL.modules-from-worklist(wl,
+        lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
+      CL.compile-program-with(wl, starter-modules, compile-opts)
+      base.locator.uri()
+    end
+
     ask:
     | cmd == "compile" then:
       result = run-task(lam():
@@ -109,63 +147,47 @@ fun serve(port, pyret-dir):
           nothing
       end
     | cmd == "info" then:
+      options = with-require-config
+      info-type = options.get-value("info-type")
       result = run-task(lam() block:
-        options = with-require-config
-        program = options.get-value("program")
-        line = options.get-value("line")
-        col = options.get-value("col")
-        shadow pyret-dir = options.get-value("this-pyret-dir")
-        compile-opts = CS.make-default-compile-options(pyret-dir).{
-          base-dir: options.get("base-dir").or-else(P.resolve(".")),
-          this-pyret-dir: pyret-dir,
-          compiled-cache: options.get("compiled-dir").or-else("./compiled"),
-          compiled-read-only: options.get-value("compiled-read-only"),
-          display-progress: false,
-          log: lam(s, _): nothing end,
-          log-error: err,
-          cache-manager: cache-manager,
-          method on-compile(self, locator, loadable, _) block:
-            cache-manager.set-loadable("", locator, loadable)
-            loadable
-          end,
-        }
-        base-module = CS.dependency("file", [list: program])
-        base = CLI.module-finder({
-          cache-manager: cache-manager,
-          current-load-path: P.resolve(compile-opts.base-dir),
-          cache-base-dir: compile-opts.compiled-cache,
-          compiled-read-only-dirs: compile-opts.compiled-read-only.map(P.resolve),
-          url-file-mode: compile-opts.url-file-mode
-        }, base-module)
-        wl = CL.compile-worklist(CLI.module-finder, base.locator, base.context)
-        starter-modules = CL.modules-from-worklist(wl,
-          lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
-        compiled = CL.compile-program-with(wl, starter-modules, compile-opts)
-        LSP.jump-to-def(compile-opts.cache-manager, base.locator.uri(), line, col)
+        base-uri = lsp-compile(options)
+        # NOTE(lsp): To add a new LSP feature, add a case here and
+        # a function in lsp.arr. The cache-manager has surface-ast,
+        # named-result, and loadable for every compiled module.
+        ask:
+          | info-type == "jump-to-def" then:
+            LSP.jump-to-def(cache-manager, base-uri,
+              options.get-value("line"), options.get-value("col"))
+        end
       end)
       cases(E.Either) result block:
         | right(exn) =>
           err-str = RED.display-to-string(exn-unwrap(exn).render-reason(), tostring, empty)
           err(err-str + "\n")
-          d = [SD.string-dict: "type", J.j-str("jump-to-def-failure")]
+          d = [SD.string-dict: "type", J.j-str(info-type + "-failure")]
           send-message(J.j-obj(d).serialize())
-        | left(jump-result) =>
-          cases(E.Either) jump-result block:
-            | left(errors) =>
-              err("jump-to-def: no result (errors: " + torepr(errors) + ")\n")
-              d = [SD.string-dict: "type", J.j-str("jump-to-def-failure")]
-              send-message(J.j-obj(d).serialize())
-            | right(loc-info) =>
-              srcloc = loc-info.{1}
-              d = [SD.string-dict:
-                "type", J.j-str("jump-to-def-success"),
-                "uri", J.j-str(loc-info.{0}),
-                "start-line", J.j-num(srcloc.start-line),
-                "start-column", J.j-num(srcloc.start-column),
-                "end-line", J.j-num(srcloc.end-line),
-                "end-column", J.j-num(srcloc.end-column)
-              ]
-              send-message(J.j-obj(d).serialize())
+        | left(info-result) =>
+          # NOTE(lsp): Each info-type is responsible for its own response
+          # serialization here, since response shapes differ per feature.
+          ask:
+            | info-type == "jump-to-def" then:
+              cases(E.Either) info-result block:
+                | left(errors) =>
+                  err("jump-to-def: no result (errors: " + torepr(errors) + ")\n")
+                  d = [SD.string-dict: "type", J.j-str("jump-to-def-failure")]
+                  send-message(J.j-obj(d).serialize())
+                | right(loc-info) =>
+                  srcloc = loc-info.{1}
+                  d = [SD.string-dict:
+                    "type", J.j-str("jump-to-def-success"),
+                    "uri", J.j-str(loc-info.{0}),
+                    "start-line", J.j-num(srcloc.start-line),
+                    "start-column", J.j-num(srcloc.start-column),
+                    "end-line", J.j-num(srcloc.end-line),
+                    "end-column", J.j-num(srcloc.end-column)
+                  ]
+                  send-message(J.j-obj(d).serialize())
+              end
           end
       end
     end
