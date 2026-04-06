@@ -2,6 +2,7 @@
   requires: [
     { 'import-type': 'builtin', 'name': 'image-lib' },
     { "import-type": "builtin", 'name': "charts-util" },
+    { "import-type": "builtin", 'name': "adaptive" }
   ],
   nativeRequires: [
     'pyret-base/js/js-numbers',
@@ -20,7 +21,7 @@
       'plot': "tany",
     }
   },
-  theModule: function (RUNTIME, NAMESPACE, uri, IMAGELIB, CHARTSUTILLIB, jsnums, vega, canvasLib) {
+  theModule: function (RUNTIME, NAMESPACE, uri, IMAGELIB, CHARTSUTILLIB, ADAPTIVELIB, jsnums, vega, canvasLib) {
     'use strict';
 
     
@@ -61,6 +62,7 @@
 
     var IMAGE = get(IMAGELIB, "internal");
     var CHARTSUTIL = get(CHARTSUTILLIB, "values");
+    var ADAPTIVE = get(ADAPTIVELIB, "internal");
 
     const ann = function(name, pred) {
       return RUNTIME.makePrimitiveAnn(name, pred);
@@ -2767,20 +2769,18 @@
 
 
     // NOTE: Must be run on Pyret stack
-    function recomputePoints(func, samplePoints, then) {
+    function recomputePoints(func, xMinValue, xMaxValue, numSamples, then) {
+      const loss = ADAPTIVE.defaultLoss;
+      const sampler = new ADAPTIVE.AdaptiveSampler(func, xMinValue, xMaxValue, loss, numSamples);
       return RUNTIME.safeCall(() => {
-        return RUNTIME.raw_array_map(RUNTIME.makeFunction((sample) => {
-          return RUNTIME.execThunk(RUNTIME.makeFunction(() => func.app(sample)));
-        }), samplePoints);
-      }, (funcVals) => {
+        sampler.runner();
+        return sampler.data;
+      }, (dataMap) => {
         const dataValues = [];
-        funcVals.forEach((result, idx) => {
-          cases(RUNTIME.ffi.isEither, 'Either', result, {
-            left: (value) => dataValues.push({
-              x: toFixnum(samplePoints[idx]),
-              y: toFixnum(value)
-            }),
-            right: () => {}
+        dataMap.forEach((yVal, xVal) => {
+          dataValues.push({
+            x: toFixnum(xVal),
+            y: toFixnum(yVal)
           })
         });
         return then(dataValues);
@@ -2800,8 +2800,6 @@
       const xMaxValue = domain[1];
       const xAxisType = globalOptions['x-axis-type'];
       const yAxisType = globalOptions['y-axis-type'];
-
-      const fraction = (xMaxValue - xMinValue) / (numSamples - 1);
 
       const data = [ { name: `${prefix}table` } ];
 
@@ -2852,9 +2850,7 @@
 
       addCrosshairs(prefix, ['Dots'], signals, marks, pointColor);
 
-      const samplePoints = [...Array(numSamples).keys().map((i) => (xMinValue + (fraction * i)))];
-
-      return recomputePoints(func, samplePoints, (dataValues) => {
+      return recomputePoints(func, xMinValue, xMaxValue, numSamples, (dataValues) => {
         data[0].values = dataValues;
         return {
           prefix,
@@ -2869,14 +2865,13 @@
             const numSamples = globalOptions.numSamples;
             const xMinValue = globalOptions.xMinValue;
             const xMaxValue = globalOptions.xMaxValue;
-            const fraction = (xMaxValue - xMinValue) / (numSamples - 1);
-            const samplePoints = [...Array(numSamples).keys().map((i) => (xMinValue + (fraction * i)))];
+
             RUNTIME.runThunk(() => {
               // NOTE(Ben): We can use view.data(`${prefix}rawTable`, ...newData...)
               // to replace the existing data points in the _current_ view, so that
               // we do not have to reconstruct a new vega.View or restart the rendering process.
               // See https://vega.github.io/vega/docs/api/view/#view_data
-              return recomputePoints(func, samplePoints, (dataValues) => {
+              return recomputePoints(func, xMinValue, xMaxValue, numSamples, (dataValues) => {
                 view.data(data[0].name, dataValues);
               });
             }, (res) => {
