@@ -25,71 +25,27 @@ import file("locators/jsfile.arr") as JSF
 import file("locators/npm.arr") as NPM
 import file("js-of-pyret.arr") as JSP
 
-j-fun = J.j-fun
-j-var = J.j-var
-j-id = J.j-id
-j-method = J.j-method
-j-block = J.j-block
-j-true = J.j-true
-j-false = J.j-false
-j-num = J.j-num
-j-str = J.j-str
-j-return = J.j-return
-j-assign = J.j-assign
-j-if = J.j-if
-j-if1 = J.j-if1
-j-new = J.j-new
-j-app = J.j-app
-j-list = J.j-list
-j-obj = J.j-obj
-j-dot = J.j-dot
-j-bracket = J.j-bracket
-j-field = J.j-field
-j-dot-assign = J.j-dot-assign
-j-bracket-assign = J.j-bracket-assign
-j-try-catch = J.j-try-catch
-j-throw = J.j-throw
-j-expr = J.j-expr
-j-binop = J.j-binop
-j-and = J.j-and
-j-lt = J.j-lt
-j-eq = J.j-eq
-j-neq = J.j-neq
-j-geq = J.j-geq
-j-unop = J.j-unop
-j-decr = J.j-decr
-j-incr = J.j-incr
-j-not = J.j-not
-j-instanceof = J.j-instanceof
-j-ternary = J.j-ternary
-j-null = J.j-null
-j-parens = J.j-parens
-j-switch = J.j-switch
-j-case = J.j-case
-j-default = J.j-default
-j-label = J.j-label
-j-break = J.j-break
-j-while = J.j-while
-j-for = J.j-for
+include from J:
+  data JStmt,
+  data JExpr,
+  data JBlock,
+end
+
+include from E:
+  data Either
+end
+
+include from CS:
+  type Loadable
+end
 
 clist = C.clist
-
-type Loadable = CS.Loadable
-
-
-type Either = E.Either
 
 fun uri-to-path(uri, name):
   name + "-" + crypto.sha256(uri)
 end
 
-
-# LSPCacheManager:
-# - in memory
-# - orignal AST, desugared/resolved AST, env, post-compile-env
-# - imports + provides
-
-type CacheManger = {
+type CacheManager = {
   cached-available :: (String, String, String, Number -> Option<Any>),
   get-cached :: (String, String, String, Any -> Any),
   get-cached-if-available :: (String, Any -> Any),
@@ -310,7 +266,7 @@ fun get-builtin-test-locator(cache-manager, basedir, modname):
   cache-manager.get-cached-if-available(basedir, loc)
 end
 
-fun get-loadable(cache-manager, basedir, read-only-basedirs, l, max-dep-times) -> Option<Loadable>:
+fun get-loadable-impl(cache-manager, basedir, read-only-basedirs, l, max-dep-times) -> Option<Loadable>:
   locuri = l.locator.uri()
   first-available = for find(rob from link(basedir, read-only-basedirs)):
     is-some(cache-manager.cached-available(rob, l.locator.uri(), l.locator.name(), max-dep-times.get-value(locuri)))
@@ -378,7 +334,6 @@ fun set-loadable(basedir, locator, loadable) -> String block:
 end
 
 type CLIContext = {
-  cache-manager :: CacheManger,
   current-load-path :: String,
   cache-base-dir :: String,
   compiled-read-only-dirs :: List<String>,
@@ -400,17 +355,18 @@ fun maybe-add-slash(s):
   end
 end
 
-fun locate-file(ctxt :: CLIContext, rel-path :: String):
+fun locate-file(cache-manager :: CacheManager, ctxt :: CLIContext, rel-path :: String):
   clp = ctxt.current-load-path
   real-path = get-real-path(clp, rel-path)
   new-context = ctxt.{current-load-path: Filesystem.dirname(real-path)}
   if Filesystem.exists(real-path):
-    some(CL.located(get-file-locator(ctxt.cache-manager, ctxt.cache-base-dir, real-path), new-context))
+    some(CL.located(get-file-locator(cache-manager, ctxt.cache-base-dir, real-path), new-context))
   else:
     none
   end
 end
-fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
+fun module-finder-with(cache-manager :: CacheManager, ctxt :: CLIContext, dep :: CS.Dependency):
+  shadow locate-file = locate-file(cache-manager, _, _)
   cases(CS.Dependency) dep:
     | dependency(protocol, args) =>
       if protocol == "file":
@@ -451,7 +407,7 @@ fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
         new-context = ctxt.{current-load-path: Filesystem.dirname(real-path)}
         CL.located(locator, new-context)
       else if protocol == "builtin-test":
-        l = get-builtin-test-locator(ctxt.cache-manager, ctxt.cache-base-dir, args.first)
+        l = get-builtin-test-locator(cache-manager, ctxt.cache-base-dir, args.first)
         force-check-mode = l.{
           method get-options(self, options):
             options.{ checks: "all", type-check: false }
@@ -477,12 +433,12 @@ fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
         raise("Unknown import type: " + protocol)
       end
     | builtin(modname) =>
-      CL.located(file-get-builtin-locator(ctxt.cache-manager, ctxt.cache-base-dir, ctxt.compiled-read-only-dirs, modname), ctxt)
+      CL.located(file-get-builtin-locator(cache-manager, ctxt.cache-base-dir, ctxt.compiled-read-only-dirs, modname), ctxt)
   end
 end
 
+
 default-start-context = {
-  cache-manager: CS.default-compile-options.cache-manager,
   current-load-path: Filesystem.resolve("./"),
   cache-base-dir: Filesystem.resolve("./compiled"),
   compiled-read-only-dirs: empty,
@@ -490,7 +446,6 @@ default-start-context = {
 }
 
 default-test-context = {
-  cache-manager: CS.default-compile-options.cache-manager,
   current-load-path: Filesystem.resolve("./"),
   cache-base-dir: Filesystem.resolve("./tests/compiled"),
   compiled-read-only-dirs: empty,
@@ -499,8 +454,8 @@ default-test-context = {
 
 fun compile(path, options):
   base-module = CS.dependency("file", [list: path])
+  shadow module-finder = module-finder-with(options.cache-manager, _, _)
   base = module-finder({
-    cache-manager: options.cache-manager,
     current-load-path: Filesystem.resolve(options.base-dir),
     cache-base-dir: options.compiled-cache,
     compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
@@ -530,25 +485,7 @@ fun propagate-exit(result) block:
   end
 end
 
-fun run(path, options, subsequent-command-line-arguments):
-  stats = SD.make-mutable-string-dict()
-  maybe-program = build-program(path, options, stats)
-  cases(Either) maybe-program block:
-    | left(problems) =>
-      handle-compilation-errors(problems, options)
-    | right(program) =>
-      command-line-arguments = link(path, subsequent-command-line-arguments)
-      result = L.run-program(R.make-runtime(), L.empty-realm(), program.js-ast.to-ugly-source(), options, command-line-arguments)
-      if L.is-success-result(result):
-        L.render-check-results(result, options.checks-format)
-      else:
-        _ = propagate-exit(result)
-        L.render-error-message(result)
-      end
-  end
-end
-
-fun make-file-cache() -> CacheManger:
+fun make-file-cache() -> CacheManager:
   {
     cached-available: file-cached-available,
     get-cached: file-get-cached,
@@ -556,7 +493,7 @@ fun make-file-cache() -> CacheManger:
       get-cached-if-available(self, basedir, loc)
     end,
     method get-loadable(self, basedir, read-only-basedirs, l, max-dep-times):
-      get-loadable(self, basedir, read-only-basedirs, l, max-dep-times)
+      get-loadable-impl(self, basedir, read-only-basedirs, l, max-dep-times)
     end,
     method set-loadable(self, basedir, locator, loadable):
       set-loadable(basedir, locator, loadable)
@@ -571,7 +508,7 @@ fun make-file-cache() -> CacheManger:
   }
 end
 
-fun make-in-memory-cache() -> CacheManger:
+fun make-in-memory-cache() -> CacheManager:
   store = [SD.mutable-string-dict:]
 
   fun get-entry(uri):
@@ -641,16 +578,49 @@ fun make-in-memory-cache() -> CacheManger:
   }
 end
 
+fun run(path, options, subsequent-command-line-arguments):
+  stats = SD.make-mutable-string-dict()
+  maybe-program = build-program(path, options, stats)
+  cases(Either) maybe-program block:
+    | left(problems) =>
+      handle-compilation-errors(problems, options)
+    | right(program) =>
+      command-line-arguments = link(path, subsequent-command-line-arguments)
+      result = L.run-program(R.make-runtime(), L.empty-realm(), program.js-ast.to-ugly-source(), options, command-line-arguments)
+      if L.is-success-result(result):
+        L.render-check-results(result, options.checks-format)
+      else:
+        _ = propagate-exit(result)
+        L.render-error-message(result)
+      end
+  end
+end
+
+# TODO: this shares a lot of commonality with `build-program`.
+fun compile-for-query(options, program) block:
+  base-module = CS.dependency("file", [list: program])
+  shadow module-finder = module-finder-with(options.cache-manager, _, _)
+  base = module-finder({
+    current-load-path: Filesystem.resolve(options.base-dir),
+    cache-base-dir: options.compiled-cache,
+    compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
+    url-file-mode: options.url-file-mode
+  }, base-module)
+  wl = CL.compile-worklist(module-finder, base.locator, base.context)
+  # starter-modules = CL.modules-from-worklist(wl,
+  #   lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
+  starter-modules = CL.modules-from-worklist(wl, options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
+  CL.compile-program-with(wl, starter-modules, options)
+  base.locator.uri()
+end
+
 fun build-program(path, options, stats) block:
   doc: ```Returns the program as a JavaScript AST of module list and dependency map,
           and its native dependencies as a list of strings```
 
+  # TODO: this should probably refactored into default opts
   shadow options = options.{
-    cache-manager: if options.lsp:
-      make-in-memory-cache()
-    else:
-      make-file-cache()
-    end
+    cache-manager: if options.query: make-in-memory-cache() else: make-file-cache() end
   }
 
   print-progress-clearing = lam(s, to-clear):
@@ -666,8 +636,8 @@ fun build-program(path, options, stats) block:
   end
   print-progress(str)
   base-module = CS.dependency("file", [list: path])
+  shadow module-finder = module-finder-with(options.cache-manager, _, _)
   base = module-finder({
-    cache-manager: options.cache-manager,
     current-load-path: Filesystem.resolve(options.base-dir),
     cache-base-dir: options.compiled-cache,
     compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
@@ -684,7 +654,8 @@ fun build-program(path, options, stats) block:
 
   clear-and-print("Loading existing compiled modules...")
 
-  starter-modules = CL.modules-from-worklist(wl, get-loadable(options.cache-manager, options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
+  starter-modules = CL.modules-from-worklist(wl, 
+    options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
 
   cached-modules = starter-modules.count-now()
   total-modules = wl.length() - cached-modules
@@ -797,3 +768,7 @@ fun build-require-standalone(path, options):
 
   print(prog.to-ugly-source())
 end
+
+
+# backwards compatibility
+module-finder = module-finder-with(make-file-cache(), _, _)

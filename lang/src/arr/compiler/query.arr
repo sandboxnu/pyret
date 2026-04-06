@@ -1,9 +1,8 @@
 provide *
 
-# NOTE(lsp): New LSP features go here as functions that take the
-# cache-manager and query parameters, then return results. The
-# cache-manager has surface-ast, named-result, and loadable for every
-# compiled module. See jump-to-def for the pattern.
+# NOTE: New LSP/queries go here as functions that take the cache-manager and 
+# query parameters, then return results. The cache-manager has surface-ast, 
+# named-result, and loadable for every compiled module.
 
 import either as E
 import srcloc as S

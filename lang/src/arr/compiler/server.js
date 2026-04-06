@@ -39,10 +39,16 @@
 
 
     // Port is a string for a file path, like /tmp/some-sock,
-    const makeServer = function(/** @type {string} */ port, /** @type {PyretFunction} */ onmessage) {
-
+    const makeServer = function(
+      /** @type {string} */ port,
+      /** @type {PyretFunction} */ onCompile,
+      /** @type {PyretFunction} */ onQuery,
+    ) {
       /**
-       * @typedef {{command: string, options: unknown, respond: function, respondJSON: function, closeConn: function}} QueueItem
+       * @typedef {{respondForPy: PyretFunction, respondJSON: function, closeConn: function}} QueueCommon
+       * @typedef {{command: 'compile', options: unknown}} CompileQueueItem
+       * @typedef {{command: 'query', query: string, compileOptions: unknown, queryOptions: unknown}} QueryQueueItem
+       * @typedef {QueueCommon & (CompileQueueItem | QueryQueueItem)} QueueItem
        */
 
       /** @type {QueueItem[]} */
@@ -52,10 +58,16 @@
       function tryQueue() {
         if (running || runQueue.length === 0) { return; }
         running = true;
-        const current = runQueue.shift();
+        const current = /** @type {QueueItem} */ (runQueue.shift());
         info(`Running queued command: ${current.command}, queue length now ${runQueue.length}`);
         runtime.runThunk(function() {
-          return onmessage.app(current.command, current.options, current.respondForPy);
+          const { respondForPy: respond } = current;
+          switch (current.command) {
+            case 'compile':
+              return onCompile.app(current.options, respond);
+            case 'query':
+              return onQuery.app(current.query, current.compileOptions, current.queryOptions);
+          }
         }, function(result) {
           if (runtime.isFailureResult(result)) {
             const exn = result.exn;
@@ -105,12 +117,12 @@
         });
 
         wsServer.on('connection', function(connection) {
-          function respond(jsonData) {
+          function respond(/** @type {string} */ jsonData) {
             info("Sending: ", jsonData);
             connection.send(jsonData);
             return runtime.nothing;
           }
-          function respondJSON(json) { return respond(JSON.stringify(json)); }
+          function respondJSON(/** @type {*} */ json) { return respond(JSON.stringify(json)); }
           const respondForPy = runtime.makeFunction(respond, "respond");
           function closeConn() { connection.close(); }
 
@@ -122,16 +134,11 @@
            * @typedef {{command: 'stop'} |
            *           {command: 'shutdown'} |
            *           {command: 'compile', compileOptions: unknown} |
-           *           {command: 'info', compileOptions: unknown}}
+           *           {command: 'query', query: string, compileOptions: unknown, queryOptions: unknown}}
            *  ServerMessage
-           *
-           * For 'info' commands, compileOptions should include an "info-type"
-           * field (e.g. "jump-to-def") that server.arr dispatches on.
-           * NOTE(lsp): No changes needed here for new LSP features — just
-           * add the info-type in server.arr's ask block.
            */
 
-          connection.on('message', function(message) {
+          connection.on('message', function(/** @type {string} */ message) {
             info(`Received Message: ${message}`);
 
             /** @type {ServerMessage} */
@@ -151,9 +158,23 @@
                 process.exit(0);
                 break;
               }
-              case "compile":
-              case "info": {
-                runQueue.push({command: parsed.command, options: parsed.compileOptions, respondForPy, respondJSON, closeConn});
+              case "compile": {
+                runQueue.push({
+                  command: parsed.command,
+                  options: parsed.compileOptions,
+                  respondForPy, respondJSON, closeConn
+                });
+                tryQueue();
+                break;
+              };
+              case "query": {
+                runQueue.push({
+                  command: parsed.command,
+                  query: parsed.query,
+                  compileOptions: parsed.compileOptions,
+                  queryOptions: parsed.queryOptions,
+                  respondForPy, respondJSON, closeConn
+                });
                 tryQueue();
                 break;
               }

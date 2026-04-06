@@ -1,6 +1,3 @@
-// NOTE: this is copied from another project that I am working on, it does
-// nothing other than improve editor suggestions.
-
 declare const __pyret_module_return: unique symbol;
 type ret = { [__pyret_module_return]: void };
 
@@ -169,6 +166,8 @@ type restarter = {
   error: func;
 };
 
+type Resumer = (restarter: restarter) => void;
+
 declare namespace ABI {
   class PBase {
     protected constructor();
@@ -222,8 +221,13 @@ declare namespace ABI {
     stats: unknown | undefined;
   }
 
+  type __ErrorExt = {
+    pyretStack?: string[];
+    exn?: val;
+  }
+
   class FailureResult {
-    exn: Error;
+    exn: Error & __ErrorExt;
     stats: unknown | undefined;
   }
 }
@@ -247,6 +251,7 @@ type RunOptions = {
   initialRunGas: number;
 };
 
+
 // NOTE: this is far from complete
 interface PyretRuntime {
   builtins: val;
@@ -265,7 +270,9 @@ interface PyretRuntime {
 
   ffi: PyretFFI;
 
-  pauseStack(callback: (restarter: restarter) => void): val;
+  pauseStack(resumer: Resumer): val;
+  schedulePause(resumer: Resumer): void;
+  breakAll(): void;
   await<T>(promise: Promise<T>): T;
 
   getField<T>(obj: val, field: string): T;

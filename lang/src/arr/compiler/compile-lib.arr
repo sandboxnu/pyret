@@ -257,6 +257,7 @@ end
 
 type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableStringDict<Loadable>}
 
+# TODO: use cache-manager here? 
 fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> CompiledProgram block:
   cache = modules
   loadables = for map(w from worklist):
@@ -427,17 +428,24 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
                 when not(options.type-check) block:
                   provides := AU.get-named-provides(named-result, locator.uri(), env)
                 end
-                {final-provides; cr} = JSP.trace-make-compiled-pyret(add-phase, cleaned, env, named-result.env, provides, options)
-                cleaned := nothing
-                canonical-provides = AU.canonicalize-provides(final-provides, env)
-                #|
-                spy "compile-lib:canonicalize-provides":
-                  final-provides,
-                  canonical-provides
+                if options.query block:
+                  {
+                    module-as-string(provides, env, named-result.env, cleaned);
+                    if options.collect-all or options.collect-times: ret.tolist() else: empty end
+                  }
+                else:
+                  {final-provides; cr} = JSP.trace-make-compiled-pyret(add-phase, cleaned, env, named-result.env, provides, options)
+                  cleaned := nothing
+                  canonical-provides = AU.canonicalize-provides(final-provides, env)
+                  #|
+                  spy "compile-lib:canonicalize-provides":
+                    final-provides,
+                    canonical-provides
+                  end
+                  |#
+                  mod-result = module-as-string(canonical-provides, env, named-result.env, cr)
+                  {mod-result; if options.collect-all or options.collect-times: ret.tolist() else: empty end}
                 end
-                |#
-                mod-result = module-as-string(canonical-provides, env, named-result.env, cr)
-                {mod-result; if options.collect-all or options.collect-times: ret.tolist() else: empty end}
               | err(_) =>
                 { module-as-string(provides, env, CS.computed-none, type-checked);
                   if options.collect-all or options.collect-times:

@@ -2982,7 +2982,7 @@ default-compile-options = {
   deps-file: "build/bundled-node-deps.js",
   standalone-file: "src/js/base/handalone.js",
   url-file-mode: all-remote,
-  lsp: false,
+  query: false,
   cache-manager: {
     method set-surface-ast(self, _, _): nothing end,
     method get-surface-ast(self, _): none end,
