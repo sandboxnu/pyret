@@ -39,11 +39,14 @@
   Calculates the arithmetic sum of the Numbers in @pyret{l}.  If @pyret{l}
   contains at least one RoughNum, then the output will be a RoughNum.
 
-  @examples{
+  @examples[#:show-try-it #t]{
+    import math as M
+    import lists as L
+
     check:
-      sum([list: ]) is 0
-      sum([list: 0, 2, 4]) is 6
-      sum([list: -1, 1, ~2]) is-roughly ~2
+      M.sum([L.list: ]) is 0
+      M.sum([L.list: 0, 2, 4]) is 6
+      M.sum([L.list: -1, 1, ~2]) is-roughly ~2
     end
   }
   }
@@ -58,11 +61,14 @@
   ]{
   Calculates the maximal element of the set of Numbers in @pyret{l}.
   
-  @examples{
+  @examples[#:show-try-it #t]{
+    import math as M
+    import lists as L
+
     check:
-      max([list: ]) raises "Empty List"
-      max([list: 10]) is 10
-      max([list: 2.1, 2, 4.5, ~1.5, -1, 1]) is-roughly 4.5
+      M.max([L.list: ]) raises "Empty List"
+      M.max([L.list: 10]) is 10
+      M.max([L.list: 2.1, 2, 4.5, ~1.5, -1, 1]) is-roughly 4.5
     end
   }
   }
@@ -74,11 +80,14 @@
   ]{
   Calculates the minimal element of the set of Numbers in @pyret{l}.
 
-  @examples{
+  @examples[#:show-try-it #t]{
+    import math as M
+    import lists as L
+
     check:
-      min([list: ]) raises "Empty List"
-      min([list: 2]) is 2
-      min([list: -1, 0, ~1, 2, 5]) is-roughly -1
+      M.min([L.list: ]) raises "Empty List"
+      M.min([L.list: 2]) is 2
+      M.min([L.list: -1, 0, ~1, 2, 5]) is-roughly -1
     end
   }
   }
@@ -90,11 +99,14 @@
   ]{
   Calculates the index of the maximal element within @pyret{l}.
   
-  @examples{
+  @examples[#:show-try-it #t]{
+    import math as M
+    import lists as L
+
     check:
-      arg-max([list: ]) raises "Empty List"
-      arg-max([list: 2]) is 0
-      arg-max([list: -1, 0, ~1, 5, 2]) is 3
+      M.arg-max([L.list: ]) raises "Empty List"
+      M.arg-max([L.list: 2]) is 0
+      M.arg-max([L.list: -1, 0, ~1, 5, 2]) is 3
     end
   }
   }
@@ -105,11 +117,14 @@
   ]{
   Calculates the index of the minimal element within @pyret{l}.
   
-  @examples{
+  @examples[#:show-try-it #t]{
+    import math as M
+    import lists as L
+
     check:
-      arg-max([list: ]) raises "Empty List"
-      arg-max([list: 8]) is 0
-      arg-max([list: -1, 0, ~1, -3, 5]) is 3
+      M.arg-min([L.list: ]) raises "Empty List"
+      M.arg-min([L.list: 8]) is 0
+      M.arg-min([L.list: -1, 0, ~1, -3, 5]) is 3
     end
   }
   }
