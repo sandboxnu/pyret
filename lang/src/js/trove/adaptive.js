@@ -42,6 +42,17 @@
             return defaultLoss(xs, ysLog);
         }
 
+        // handles if val is a number or Roughnum
+        function unwrapNum(val) {
+            if (typeof(val) == "number") {
+                return val;
+            } else if (typeof(val) == "object") {
+                return val.n;
+            } else {
+                throw new Error("Invalid type:", typeof(val))
+            }
+        }
+
         /**
          * Flow:
          * 1. Initialize data
@@ -65,20 +76,40 @@
             this.numSamples = numSamples;
             this.pending = [];
 
+            // handles zero division error
+            // TODO: janky error handling
+            this.runFunc = function(input, offset=1e-6) {
+                let x = input;
+                let y;
+                try {
+                    y = unwrapNum(this.func.app(x));
+                } catch (e) {
+                    x = offset;
+                    y = unwrapNum(this.func.app(x));
+                }
+                return { x, y }
+            };
+
             // initialize data by computing f(x) for endpoints
             this.initData = function() {
-                this.data.set(xMinValue, this.func.app(xMinValue));
-                this.data.set(xMaxValue, this.func.app(xMaxValue));
+                lower = this.runFunc(xMinValue);
+                upper = this.runFunc(xMaxValue);
+                this.data.set(lower.x, lower.y);
+                this.data.set(upper.x, upper.y);
                 this.pending.push([xMinValue, xMaxValue]);
             };
 
             // compute loss for each interval in pending
+            // TODO: janky error handling
             this.computeLosses = function() {
                 while (this.pending.length > 0) {
                     const xs = this.pending.pop();
-                    const ys = [this.data.get(xs[0]), this.data.get(xs[1])]
-                    const loss = this.lossFunction(xs, ys)
-                    this.lossManager.push([...xs, loss])
+                    const ys = [this.data.get(xs[0]), this.data.get(xs[1])];
+                    if (ys[0] == null || ys[1] == null) {
+                        continue;
+                    }
+                    const loss = this.lossFunction(xs, ys);
+                    this.lossManager.push([...xs, loss]);
                 }
             };
 
@@ -104,7 +135,8 @@
             this.splitInterval = function(maxInterval, maxIndex) {
                 const [l, r] = maxInterval;
                 const m = (l + r) / 2;
-                this.data.set(m, this.func.app(m));
+                coord = this.runFunc(m);
+                this.data.set(coord.x, coord.y);
                 this.lossManager.splice(maxIndex, 1);
                 this.pending.push([l, m], [m, r]);
             };
@@ -114,10 +146,10 @@
             this.runner = function() {
                 this.initData();
                 this.computeLosses();
-                while (this.data.size < 10) {
-                    const maxLoss = this.getMaxLoss()
-                    this.splitInterval(maxLoss.maxInterval, maxLoss.maxIndex)
-                    this.computeLosses()
+                while (this.data.size < numSamples) {
+                    const maxLoss = this.getMaxLoss();
+                    this.splitInterval(maxLoss.maxInterval, maxLoss.maxIndex);
+                    this.computeLosses();
                 }
             };
         }
