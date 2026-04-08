@@ -24,6 +24,18 @@ import file("type-check.arr") as T
 import file("desugar-check.arr") as CH
 import file("resolve-scope.arr") as RS
 
+include from J:
+  data JExpr,
+  data JStmt,
+  data JCase,
+  data JBinop,
+  data JField,
+end
+
+include from E:
+  data Either
+end
+
 data CompilationPhase:
   | start(time :: Number)
   | phase(name :: String, result :: Any, time :: Number, prev :: CompilationPhase)
@@ -42,57 +54,6 @@ sharing:
   end
 end
 
-j-fun = J.j-fun
-j-var = J.j-var
-j-id = J.j-id
-j-method = J.j-method
-j-block = J.j-block
-j-true = J.j-true
-j-false = J.j-false
-j-num = J.j-num
-j-str = J.j-str
-j-return = J.j-return
-j-assign = J.j-assign
-j-if = J.j-if
-j-if1 = J.j-if1
-j-new = J.j-new
-j-app = J.j-app
-j-list = J.j-list
-j-obj = J.j-obj
-j-dot = J.j-dot
-j-bracket = J.j-bracket
-j-field = J.j-field
-j-dot-assign = J.j-dot-assign
-j-bracket-assign = J.j-bracket-assign
-j-try-catch = J.j-try-catch
-j-throw = J.j-throw
-j-expr = J.j-expr
-j-binop = J.j-binop
-j-and = J.j-and
-j-lt = J.j-lt
-j-eq = J.j-eq
-j-neq = J.j-neq
-j-geq = J.j-geq
-j-unop = J.j-unop
-j-decr = J.j-decr
-j-incr = J.j-incr
-j-not = J.j-not
-j-instanceof = J.j-instanceof
-j-ternary = J.j-ternary
-j-null = J.j-null
-j-parens = J.j-parens
-j-switch = J.j-switch
-j-case = J.j-case
-j-default = J.j-default
-j-label = J.j-label
-j-break = J.j-break
-j-while = J.j-while
-j-for = J.j-for
-
-
-left = E.left
-right = E.right
-type Either = E.Either
 
 mtd = [SD.string-dict:]
 
@@ -296,6 +257,7 @@ end
 
 type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableStringDict<Loadable>}
 
+# TODO: use cache-manager here? 
 fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> CompiledProgram block:
   cache = modules
   loadables = for map(w from worklist):
@@ -363,6 +325,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
         | pyret-ast(module-ast) =>
           module-ast
       end
+      options.cache-manager.set-surface-ast(locator.uri(), ast)
       var ret = start(time-now())
       fun add-phase(name, value) block:
         if options.collect-all:
@@ -427,6 +390,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
             var desugared = D.desugar(spied)
             spied := nothing
             named-result.env.bindings.merge-now(desugared.new-binds)
+            options.cache-manager.set-named-result(locator.uri(), named-result)
             # ...in order to be checked for bad assignments here
             any-errors := RS.check-unbound-ids-bad-assignments(desugared.ast, named-result, env)
             add-phase("Fully desugared", desugared.ast)
@@ -464,17 +428,24 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
                 when not(options.type-check) block:
                   provides := AU.get-named-provides(named-result, locator.uri(), env)
                 end
-                {final-provides; cr} = JSP.trace-make-compiled-pyret(add-phase, cleaned, env, named-result.env, provides, options)
-                cleaned := nothing
-                canonical-provides = AU.canonicalize-provides(final-provides, env)
-                #|
-                spy "compile-lib:canonicalize-provides":
-                  final-provides,
-                  canonical-provides
+                if options.query block:
+                  {
+                    module-as-string(provides, env, named-result.env, CS.ok(cleaned));
+                    if options.collect-all or options.collect-times: ret.tolist() else: empty end
+                  }
+                else:
+                  {final-provides; cr} = JSP.trace-make-compiled-pyret(add-phase, cleaned, env, named-result.env, provides, options)
+                  cleaned := nothing
+                  canonical-provides = AU.canonicalize-provides(final-provides, env)
+                  #|
+                  spy "compile-lib:canonicalize-provides":
+                    final-provides,
+                    canonical-provides
+                  end
+                  |#
+                  mod-result = module-as-string(canonical-provides, env, named-result.env, cr)
+                  {mod-result; if options.collect-all or options.collect-times: ret.tolist() else: empty end}
                 end
-                |#
-                mod-result = module-as-string(canonical-provides, env, named-result.env, cr)
-                {mod-result; if options.collect-all or options.collect-times: ret.tolist() else: empty end}
               | err(_) =>
                 { module-as-string(provides, env, CS.computed-none, type-checked);
                   if options.collect-all or options.collect-times:
@@ -569,11 +540,11 @@ fun make-standalone(wl, compiled, options):
 
   check-str = if not(options.check-mode): "none" else: options.checks end
 
-  runtime-options = J.j-obj(
+  runtime-options = j-obj(
     [C.clist:
-      J.j-field("checksFormat", j-str(options.checks-format)),
-      J.j-field("checks", j-str(check-str)),
-      J.j-field("disableAnnotationChecks",
+      j-field("checksFormat", j-str(options.checks-format)),
+      j-field("checks", j-str(check-str)),
+      j-field("disableAnnotationChecks",
         if options.runtime-annotations:
           j-false
         else:

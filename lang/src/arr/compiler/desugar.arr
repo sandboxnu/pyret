@@ -24,8 +24,8 @@ end
 mt-d-env = d-env([tree-set: ], [tree-set: ], [tree-set: ])
 var generated-binds = SD.make-mutable-string-dict()
 
-fun g(id): A.s-global(id) end
-fun gid(l, id): A.s-id(l, g(id)) end
+fun g(l, id): A.s-global(l, id) end
+fun gid(l, id): A.s-id(l, g(l, id)) end
 fun bid(l, name): A.s-dot(l, A.s-prim-val(l, "builtins"), name) end
 
 flat-prim-app = A.prim-app-info-c(false)
@@ -138,13 +138,13 @@ fun desugar(program :: A.Program):
 end
 
 fun mk-id-ann(loc, base, ann) block:
-  a = names.make-atom(base)
+  a = names.make-atom(loc, base)
   generated-binds.set-now(a.key(), C.value-bind(C.bo-local(loc, a), C.vb-let, a, ann))
   { id: a, id-b: A.s-bind(loc, false, a, ann), id-e: A.s-id(loc, a) }
 end
 
 fun mk-id-var-ann(loc, base, ann) block:
-  a = names.make-atom(base)
+  a = names.make-atom(loc, base)
   generated-binds.set-now(a.key(), C.value-bind(C.bo-local(loc, a), C.vb-var, a, ann))
   { id: a, id-b: A.s-bind(loc, false, a, ann), id-e: A.s-id-var(loc, a) }
 end
@@ -278,7 +278,7 @@ fun ds-curry(l, f, args):
 where:
   d = A.dummy-loc
   n = A.s-global
-  id = lam(s): A.s-id(d, A.s-global(s)) end
+  id = lam(s): A.s-id(d, A.s-global(d, s)) end
   under = A.s-id(d, A.s-underscore(d))
   ds-ed = ds-curry(
       d,
@@ -699,7 +699,7 @@ fun desugar-expr(expr :: A.Expr):
                     | s-table-extend-reducer(shadow l, name, reducer-expr, _, _) =>
                       reducer = reducers.get-value(name)
                       acc = accs.get-value(name)
-                      nothing-expr = A.s-id(l, A.s-global("nothing"))
+                      nothing-expr = A.s-id(l, A.s-global(A.dummy-loc, "nothing"))
                       link(A.s-let-bind(l, reducer.id-b, desugar-expr(reducer-expr)),
                         link(A.s-var-bind(l, acc.id-b, nothing-expr),
                           reducers-acc))
@@ -784,7 +784,7 @@ fun desugar-expr(expr :: A.Expr):
                   flat-prim-app),
                 # Data
                 with-initialized-reducers(
-                  A.s-app(l, A.s-id(l, A.s-global("raw-array-map-1")), [list:
+                  A.s-app(l, A.s-id(l, A.s-global(A.dummy-loc, "raw-array-map-1")), [list:
                       data-pop-mapfun(true),
                       data-pop-mapfun(false),
                       A.s-dot(A.dummy-loc, tbl.id-e, "_rows-raw-array")]))], flat-prim-app)]), true)
@@ -823,7 +823,7 @@ fun desugar-expr(expr :: A.Expr):
             # Header
             A.s-dot(A.dummy-loc, tbl.id-e, "_header-raw-array"),
             # Data
-            A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-map")), [list:
+            A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-map")), [list:
                 A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
                   A.s-let-expr(A.dummy-loc,
                     link(
@@ -862,7 +862,7 @@ fun desugar-expr(expr :: A.Expr):
           # Header
           A.s-array(A.dummy-loc,  columns.map(_.name)),
           # Data
-          A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-map")), [list:
+          A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-map")), [list:
             A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
               A.s-array(A.dummy-loc,
                 columns.map(lam(c):
@@ -880,7 +880,7 @@ fun desugar-expr(expr :: A.Expr):
           get-table-column(l, table.l, tbl.id-e, {l: column.l, name: A.s-str(A.dummy-loc,column.s)}))],
         # Table Construction
         A.s-prim-app(A.dummy-loc, "raw_array_to_list", [list:
-          A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-map")), [list:
+          A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-map")), [list:
             A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
               A.s-prim-app(A.dummy-loc, "raw_array_get", [list: row.id-e, col.id-e], flat-prim-app), none, none, true),
              A.s-dot(A.dummy-loc, tbl.id-e, "_rows-raw-array")])], flat-prim-app), true)
@@ -894,7 +894,7 @@ fun desugar-expr(expr :: A.Expr):
     | s-table-filter(l, column-binds, predicate) =>
       row = mk-id(A.dummy-loc, "row")
       tbl = mk-id(l, "table")
-      pred-res = mk-id-ann(predicate.l, "pred", A.a-name(predicate.l, A.s-type-global("Boolean")))
+      pred-res = mk-id-ann(predicate.l, "pred", A.a-name(predicate.l, A.s-type-global(l, "Boolean")))
 
       columns =
         column-binds.binds.map(lam(c):
@@ -916,7 +916,7 @@ fun desugar-expr(expr :: A.Expr):
             # Header
             A.s-dot(A.dummy-loc, tbl.id-e, "_header-raw-array"),
             # Data
-            A.s-app(l, A.s-id(A.dummy-loc, g("raw-array-filter")), [list:
+            A.s-app(l, A.s-id(A.dummy-loc, g(A.dummy-loc, "raw-array-filter")), [list:
                 A.s-lam(A.dummy-loc, "", empty,  [list: row.id-b], A.a-blank, "",
                   A.s-let-expr(A.dummy-loc,
                     columns.map(lam(column):
@@ -956,8 +956,8 @@ fun desugar-expr(expr :: A.Expr):
 where:
   d = A.dummy-loc
   unglobal = A.default-map-visitor.{
-    method s-global(self, s): A.s-name(d, s) end,
-    method s-atom(self, base, serial): A.s-name(d, base) end
+    method s-global(self, l, s): A.s-name(l, s) end,
+    method s-atom(self, l, base, serial): A.s-name(l, base) end
   }
   p = lam(str): PP.surface-parse(str, "test").block.visit(A.dummy-loc-visitor) end
   ds = lam(prog): desugar-expr(prog).visit(unglobal).visit(A.dummy-loc-visitor) end

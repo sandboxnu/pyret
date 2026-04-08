@@ -125,7 +125,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "name#" + self.s end
 
-  | s-global(s :: String) with:
+  | s-global(l :: Loc, s :: String) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): self.s end,
     method tosource(self): PP.str(self.s) end,
@@ -133,7 +133,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "global#" + self.s end
 
-  | s-module-global(s :: String) with:
+  | s-module-global(l :: Loc, s :: String) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): "$module$" + self.s end,
     method tosource(self): PP.str(self.s) end,
@@ -141,7 +141,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "mglobal#" + self.s end
 
-  | s-type-global(s :: String) with:
+  | s-type-global(l :: Loc, s :: String) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): "$type$" + self.s end,
     method tosource(self): PP.str(self.s) end,
@@ -149,7 +149,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "tglobal#" + self.s end
     
-  | s-atom(base :: String, serial :: Number) with:
+  | s-atom(l :: Loc, base :: String, serial :: Number) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): self.base + tostring(self.serial) end,
     method tosource(self): PP.str(self.toname()) end,
@@ -169,9 +169,9 @@ end
 
 fun MakeName(start):
   var count = start
-  fun atom(base :: String) block:
+  fun atom(l :: Loc, base :: String) block:
     count := 1 + count
-    s-atom(base, count)
+    s-atom(l, base, count)
   end
   {
     reset: lam(): count := start end,
@@ -578,6 +578,7 @@ sharing:
   end
 end
 
+# ZACK: no loc
 data DefinedModule:
   | s-defined-module(name :: String, value :: Name, uri :: String) with:
     method label(self): "s-defined-module" end,
@@ -590,6 +591,7 @@ sharing:
   end
 end
 
+# ZACK: no loc
 data DefinedValue:
   | s-defined-value(name :: String, value :: Expr) with:
     method label(self): "s-defined-value" end,
@@ -1371,6 +1373,7 @@ sharing:
   end
 end
 
+# ZACK: doesn't have loc
 data ConstructModifier:
   | s-construct-normal with:
     method label(self): "s-construct-normal" end,
@@ -1490,6 +1493,7 @@ sharing:
   end
 end
 
+# ZACK: no loc
 data ColumnSortOrder:
   | ASCENDING with:
     method tosource(self):
@@ -1570,6 +1574,7 @@ sharing:
   end
 end
 
+# ZACK: no loc
 data VariantMemberType:
   | s-normal with:
     method label(self): "s-normal" end,
@@ -1669,6 +1674,7 @@ sharing:
   end
 end
 
+# ZACK: NO LOC
 data CasesBindType:
   | s-cases-bind-ref with:
     method label(self): "s-cases-bind-ref" end,
@@ -1777,6 +1783,7 @@ sharing:
   end
 end
 
+# a-blank HAS NO LOC, nor a-checked
 data Ann:
   | a-blank with:
     method label(self): "a-blank" end,
@@ -1898,20 +1905,20 @@ default-map-visitor = {
     s-name(l, s)
   end,
 
-  method s-type-global(self, s):
-    s-type-global(s)
+  method s-type-global(self, l, s):
+    s-type-global(l, s)
   end,
 
-  method s-module-global(self, s):
-    s-module-global(s)
+  method s-module-global(self, l, s):
+    s-module-global(l, s)
   end,
 
-  method s-global(self, s):
-    s-global(s)
+  method s-global(self, l, s):
+    s-global(l, s)
   end,
 
-  method s-atom(self, base, serial):
-    s-atom(base, serial)
+  method s-atom(self, l, base, serial):
+    s-atom(l, base, serial)
   end,
 
   method s-star(self, l, hidden):
@@ -2524,16 +2531,16 @@ default-iter-visitor = {
   method s-name(self, l, s):
     true
   end,
-  method s-global(self, s):
+  method s-global(self, l, s):
     true
   end,
-  method s-type-global(self, s):
+  method s-type-global(self, l, s):
     true
   end,
-  method s-module-global(self, s):
+  method s-module-global(self, l, s):
     true
   end,
-  method s-atom(self, base, serial):
+  method s-atom(self, l, base, serial):
     true
   end,
 
@@ -3142,17 +3149,17 @@ dummy-loc-visitor = {
   method s-name(self, l, s):
     s-name(dummy-loc, s)
   end,
-  method s-global(self, s):
-    s-global(s)
+  method s-global(self, l, s):
+    s-global(dummy-loc, s)
   end,
-  method s-type-global(self, s):
-    s-type-global(s)
+  method s-type-global(self, l, s):
+    s-type-global(dummy-loc, s)
   end,
-  method s-module-global(self, s):
-    s-module-global(s)
+  method s-module-global(self, l, s):
+    s-module-global(dummy-loc, s)
   end,
-  method s-atom(self, base, serial):
-    s-atom(base, serial)
+  method s-atom(self, l, base, serial):
+    s-atom(dummy-loc, base, serial)
   end,
 
   method s-star(self, _, hidden):

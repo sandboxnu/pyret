@@ -1,3 +1,5 @@
+use context empty-context
+
 import either as Eth
 import error as E
 
