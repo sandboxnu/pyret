@@ -16,30 +16,30 @@ import file("./query.arr") as Q
 import file("locators/builtin.arr") as B
 
 fun get-compile-opts(options):
-  compile-opts = CS.make-default-compile-options(options.get-value("this-pyret-dir"))
-  compile-opts.{
-    base-dir: options.get-value("base-dir"),
+  opts = CS.make-default-compile-options(options.get-value("this-pyret-dir"))
+  opts.{
+    base-dir: options.get("base-dir").or-else(opts.base-dir),
     this-pyret-dir : options.get-value("this-pyret-dir"),
-    check-mode : not(options.get("no-check-mode").or-else(false)),
-    type-check : options.get("type-check").or-else(false),
-    allow-shadowed : options.get("allow-shadowed").or-else(false),
-    collect-all: options.get("collect-all").or-else(false),
-    ignore-unbound: options.get("ignore-unbound").or-else(false),
-    proper-tail-calls: options.get("improper-tail-calls").or-else(true),
+    check-mode : not(options.get("no-check-mode").or-else(not(opts.check-mode))),
+    type-check : options.get("type-check").or-else(opts.type-check),
+    allow-shadowed : options.get("allow-shadowed").or-else(opts.allow-shadowed),
+    collect-all: options.get("collect-all").or-else(opts.collect-all),
+    ignore-unbound: options.get("ignore-unbound").or-else(opts.ignore-unbound),
+    proper-tail-calls: not(options.get("improper-tail-calls").or-else(not(opts.proper-tail-calls))),
     compiled-cache: options.get("compiled-dir").or-else("./compiled"),
-    compiled-read-only: options.get("compiled-read-only").or-else(empty),
-    standalone-file: options.get("standalone-file").or-else(compile-opts.standalone-file),
-    checks: options.get-value("checks"),
-    checks-format: options.get-value("checks-format"),
-    display-progress: options.get("display-progress").or-else(true),
-    log: options.get("log").or-else(compile-opts.log),
-    log-error: options.get("log-error").or-else(compile-opts.log-error),
-    deps-file: options.get("deps-file").or-else(compile-opts.deps-file),
-    user-annotations: options.get("user-annotations").or-else(compile-opts.user-annotations)
+    compiled-read-only: options.get("compiled-read-only").or-else(opts.compiled-read-only),
+    standalone-file: options.get("standalone-file").or-else(opts.standalone-file),
+    checks: options.get("checks").or-else(opts.checks),
+    checks-format: options.get("checks-format").or-else(opts.checks-format),
+    display-progress: options.get("display-progress").or-else(opts.display-progress),
+    log: options.get("log").or-else(opts.log),
+    log-error: options.get("log-error").or-else(opts.log-error),
+    deps-file: options.get("deps-file").or-else(opts.deps-file),
+    user-annotations: options.get("user-annotations").or-else(opts.user-annotations)
   }
 end
 
-fun handle-compile-opts(msg, send-message) block:
+fun handle-compile-opts(pyret-dir, msg, send-message) block:
   # print("Got message in pyret-land: " + msg)
   opts = J.read-json(msg).native()
   # print(torepr(opts))
@@ -73,7 +73,6 @@ fun handle-compile-opts(msg, send-message) block:
     d = [SD.string-dict: "type", J.j-str("echo-err"), "contents", J.j-str(s)]
     send-message(J.j-obj(d).serialize())
   end
-  pyret-dir = opts.get-now("this-pyret-dir")
   opts-prime = opts
     .set("log", log)
     .set("log-error", err)
@@ -93,11 +92,14 @@ fun compile(options):
     | some(v) => v
     | none => options.get-value("program") + ".jarr"
   end
+  opts = get-compile-opts(options).{
+    cache-manager: CLI.make-file-cache()
+  }
   CLI.build-runnable-standalone(
     options.get-value("program"),
     options.get-value("require-config"),
     outfile,
-    get-compile-opts(options)
+    opts 
   )
 end
 
@@ -108,16 +110,16 @@ fun query-compile(options, cache-manager):
     query: true,
     cache-manager: cache-manager
   }
-  CLI.compile-for-query(program, compile-opts)
+  CLI.compile-for-query(compile-opts, program)
 end
 
-fun on-compile(msg, send-message):
-  opts = handle-compile-opts(msg, send-message)
+fun on-compile(pyret-dir, msg, send-message):
+  opts = handle-compile-opts(pyret-dir, msg, send-message)
   result = run-task(lam(): compile(opts) end)
   cases(E.Either) result block:
     | right(exn) =>
       err-str = RED.display-to-string(exn-unwrap(exn).render-reason(), tostring, empty)
-      opts.get-now("log-error")(err-str + "\n")
+      opts.get-value("log-error")(err-str + "\n")
       d = [SD.string-dict: "type", J.j-str("compile-failure")]
       send-message(J.j-obj(d).serialize())
     | left(val) =>
@@ -127,8 +129,9 @@ fun on-compile(msg, send-message):
   end
 end
 
-fun on-query(cache-manager, query, compile-opts, query-opts, send-message):
-  shadow compile-opts = handle-compile-opts(compile-opts)
+fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-message):
+  shadow compile-opts = handle-compile-opts(pyret-dir, compile-opts, send-message)
+  shadow query-opts = J.read-json(query-opts).native()
   result = run-task(lam():
     base-uri = query-compile(compile-opts, cache-manager)
     # NOTE: To add a new query feature, add a case here and # a function in 
@@ -136,12 +139,13 @@ fun on-query(cache-manager, query, compile-opts, query-opts, send-message):
     # for every compiled module.
     ask:
       | query == "jump-to-def" then:
-        Q.jump-to-def(cache-manager, base-uri,
-          query-opts.get-value("line"), query-opts.get-value("col"))
+        line = query-opts.get-value("line")
+        col = query-opts.get-value("col")
+        Q.jump-to-def(cache-manager, base-uri, line, col)
     end
   end)
 
-  err = compile-opts.get-now("log-error")
+  err = compile-opts.get-value("log-error")
 
   cases(E.Either) result block:
     | right(exn) =>
@@ -178,5 +182,9 @@ end
 
 fun serve(port, pyret-dir):
   cache-manager = CLI.make-in-memory-cache()
-  S.make-server(port, on-compile, on-query(cache-manager, _, _, _, _))
+  S.make-server(
+    port, 
+    on-compile(pyret-dir, _, _),
+    on-query(pyret-dir, cache-manager, _, _, _, _)
+  )
 end

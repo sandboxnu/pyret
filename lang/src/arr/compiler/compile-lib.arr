@@ -430,7 +430,7 @@ fun compile-module(locator :: Locator, provide-map :: SD.StringDict<URI>, module
                 end
                 if options.query block:
                   {
-                    module-as-string(provides, env, named-result.env, cleaned);
+                    module-as-string(provides, env, named-result.env, CS.ok(cleaned));
                     if options.collect-all or options.collect-times: ret.tolist() else: empty end
                   }
                 else:

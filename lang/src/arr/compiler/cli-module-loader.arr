@@ -524,10 +524,24 @@ fun make-in-memory-cache() -> CacheManager:
   end
 
   {
-    cached-available: lam(_, uri, _, _):
-      if store.has-key-now(uri): some(nothing) else: none end
+    # TODO: falling back to file-based lookup for builtins is a workaround;
+    # ideally builtins would be loaded into the in-memory store directly
+    cached-available: lam(basedir, uri, name, mtime):
+      if store.has-key-now(uri): some(nothing)
+      else if string-index-of(uri, "builtin://") == 0:
+        file-cached-available(basedir, uri, name, mtime)
+      else: none
+      end
     end,
-    get-cached: mem-get-cached(store, _, _, _, _),
+    get-cached: lam(basedir, uri, name, cache-type):
+      if store.has-key-now(uri):
+        mem-get-cached(store, basedir, uri, name, cache-type)
+      else if string-index-of(uri, "builtin://") == 0:
+        file-get-cached(basedir, uri, name, cache-type)
+      else:
+        raise("No in-memory cache entry for non-builtin module " + uri)
+      end
+    end,
     method get-cached-if-available(self, _, loc):
       if store.has-key-now(loc.uri()):
         self.get-cached("", loc.uri(), loc.name(), nothing).{
@@ -540,10 +554,17 @@ fun make-in-memory-cache() -> CacheManager:
         end
       end
     end,
-    method get-loadable(self, _, _, l, _):
+    method get-loadable(self, basedir, read-only-basedirs, l, max-dep-times):
       cases(Option) get-entry(l.locator.uri()):
         | some(e) => e.loadable
-        | none => none
+        | none =>
+          # Fall back to file-based lookup for builtins so they land in
+          # starter-modules and skip compile-module entirely.
+          if string-index-of(l.locator.uri(), "builtin://") == 0:
+            get-loadable-impl(self, basedir, read-only-basedirs, l, max-dep-times)
+          else:
+            none
+          end
       end
     end,
     method set-loadable(self, _, locator, loadable) block:
@@ -654,7 +675,7 @@ fun build-program(path, options, stats) block:
 
   clear-and-print("Loading existing compiled modules...")
 
-  starter-modules = CL.modules-from-worklist(wl, 
+  starter-modules = CL.modules-from-worklist(wl,
     options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
 
   cached-modules = starter-modules.count-now()
@@ -710,7 +731,7 @@ fun build-runnable-standalone(path, require-config-path, outfile, options) block
     | none => nothing
     | some(tb) =>
       cases(JSON.JSON) tb:
-        | j-arr(l) => 
+        | j-arr(l) =>
           BL.set-typable-builtins(l.map(_.s))
         | else => raise("Expected a list for typable-builtins, but got: " + to-repr(tb))
       end
@@ -738,7 +759,7 @@ fun build-runnable-standalone(path, require-config-path, outfile, options) block
       end
 
       ans = make-standalone-res and html-res
-      
+
       when options.collect-times block:
         standalone-end = time-now() - stats.get-value-now("standalone")
         stats.set-now("standalone", [list: "Outputing JS: " + tostring(standalone-end) + "ms"])

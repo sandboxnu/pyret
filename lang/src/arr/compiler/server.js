@@ -66,7 +66,7 @@
             case 'compile':
               return onCompile.app(current.options, respond);
             case 'query':
-              return onQuery.app(current.query, current.compileOptions, current.queryOptions);
+              return onQuery.app(current.query, current.compileOptions, current.queryOptions, current.respondForPy);
           }
         }, function(result) {
           if (runtime.isFailureResult(result)) {

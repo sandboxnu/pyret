@@ -159,13 +159,17 @@ function sendJumpToDefRequest(
     });
 
     client.on("open", () => {
-      const compileOptions = JSON.stringify({
-        "info-type": "jump-to-def",
-        program: filePath,
-        line,
-        col,
-      });
-      client.send(JSON.stringify({ command: "info", compileOptions }));
+      client.send(
+        JSON.stringify({
+          command: "query",
+          query: "jump-to-def",
+          compileOptions: JSON.stringify({
+            program: filePath,
+            "base-dir": ".", // TODO
+          }), // TODO allow configuring default compileOptions
+          queryOptions: JSON.stringify({ line, col }),
+        }),
+      );
     });
 
     client.on("message", (data: WebSocket.RawData) => {
