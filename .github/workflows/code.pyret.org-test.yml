@@ -2,6 +2,8 @@ name: code.pyret.org/ tests
 
 on:
   push:
+    tags-ignore:
+      - automated*
   pull_request:
   workflow_dispatch:
   
