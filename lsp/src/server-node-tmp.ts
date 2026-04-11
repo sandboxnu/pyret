@@ -138,8 +138,8 @@ interface JumpToDefSuccess {
 // 1. Add a send*Request function below (following this pattern)
 // 2. Add a connection.on* handler at the bottom that calls it
 // 3. Register the capability in onInitialize
-// 4. Add an info-type case in server.arr's info handler
-// 5. Add the Pyret-side logic in lsp.arr
+// 4. Add an query case in server.arr's query handler
+// 5. Add the Pyret-side logic in query.arr
 
 function sendJumpToDefRequest(
   portFile: string,
@@ -148,6 +148,7 @@ function sendJumpToDefRequest(
   col: number,
 ): Promise<JumpToDefSuccess | null> {
   return new Promise((resolve, reject) => {
+    // FIXME: close client
     const client = new WebSocket("ws+unix://" + portFile);
     let settled = false;
 
@@ -165,7 +166,6 @@ function sendJumpToDefRequest(
           query: "jump-to-def",
           compileOptions: JSON.stringify({
             program: filePath,
-            "base-dir": ".", // TODO
           }), // TODO allow configuring default compileOptions
           queryOptions: JSON.stringify({ line, col }),
         }),
