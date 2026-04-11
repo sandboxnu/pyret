@@ -365,6 +365,21 @@
 (define (append-gen-docs . desc)
   "")
 
+(define (section-number-css here-html)
+  (define p (page-section-prefix here-html))
+  (if (not p)
+      ""
+      (let ([pd (string-append p ".")])
+        (string-append
+          ".container { counter-reset: h2c 0; }\n"
+          ".container h1::before { content: \"" p " \"; }\n"
+          ".container h2 { counter-increment: h2c; counter-reset: h3c 0; }\n"
+          ".container h2::before { content: \"" pd "\" counter(h2c) \" \"; }\n"
+          ".container h3 { counter-increment: h3c; counter-reset: h4c 0; }\n"
+          ".container h3::before { content: \"" pd "\" counter(h2c) \".\" counter(h3c) \" \"; }\n"
+          ".container h4 { counter-increment: h4c; }\n"
+          ".container h4::before { content: \"" pd "\" counter(h2c) \".\" counter(h3c) \".\" counter(h4c) \" \"; }\n"))))
+
 (define (add-paras info)
      ; (printf "### add-paras ~s\n" info)
      ; (printf "### first info = ~s\n" (car info))
@@ -415,3 +430,33 @@
 
 (define (rbrace)
   `(span () "}"))
+
+;; Landing page components
+
+(define (landing-hero . elems)
+  `(div ([class "landing-hero"]) ,@elems))
+
+(define (landing-description . elems)
+  `(div ([class "landing-description"]) ,@elems))
+
+(define (landing-searchbar)
+  `(div ([class "landing-searchbar"])
+     (div ([class "landing-searchbar-inner"])
+       (span ([class "material-symbols-rounded search-icon"]) "search")
+       (input ([class "landing-searchbox"]
+               [id "landing-searchbox"]
+               [type "text"]
+               [tabindex "1"]
+               [placeholder "Search..."]
+               [title "Enter a search string to search the manuals"]
+               [onkeypress "return DoSearchKey(event, this, '9.1', '');"])))))
+
+(define (landing-btn url . elems)
+  `(div ([class "landing-btn-wrapper"])
+     (a ([class "landing-btn"] [href ,url]) ,@elems)))
+
+(define (landing-releases . elems)
+  `(div ([class "landing-releases"]) ,@elems))
+
+(define (landing-release-links . elems)
+  `(div ([class "landing-release-links"]) ,@elems))
