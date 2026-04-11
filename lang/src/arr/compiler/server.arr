@@ -129,19 +129,44 @@ fun on-compile(pyret-dir, msg, send-message):
   end
 end
 
+fun serialize-diagnostic(msg, maybe-loc):
+  base = [SD.string-dict: "message", J.j-str(msg)]
+  cases(Option) maybe-loc:
+    | some(l) =>
+      J.j-obj(base
+        .set("start-line", J.j-num(l.start-line))
+        .set("start-column", J.j-num(l.start-column))
+        .set("end-line", J.j-num(l.end-line))
+        .set("end-column", J.j-num(l.end-column)))
+    | none => J.j-obj(base)
+  end
+end
+
+fun send-check-result(diagnostics, send-message):
+  serialized = diagnostics.map(lam(d):
+    serialize-diagnostic(d.{0}, d.{1})
+  end)
+  d = [SD.string-dict:
+    "type", J.j-str("check-success"),
+    "diagnostics", J.j-arr(serialized)]
+  send-message(J.j-obj(d).serialize())
+end
+
 fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-message):
   shadow compile-opts = handle-compile-opts(pyret-dir, compile-opts, send-message)
   shadow query-opts = J.read-json(query-opts).native()
   result = run-task(lam():
-    base-uri = query-compile(compile-opts, cache-manager)
-    # NOTE: To add a new query feature, add a case here and # a function in 
-    # query.arr. The cache-manager has surface-ast, named-result, and loadable 
+    {base-uri; compiled} = query-compile(compile-opts, cache-manager)
+    # NOTE: To add a new query feature, add a case here and a function in
+    # query.arr. The cache-manager has surface-ast, named-result, and loadable
     # for every compiled module.
     ask:
       | query == "jump-to-def" then:
         line = query-opts.get-value("line")
         col = query-opts.get-value("col")
         Q.jump-to-def(cache-manager, base-uri, line, col)
+      | query == "check" then:
+        Q.get-diagnostics(compiled)
     end
   end)
 
@@ -149,19 +174,25 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
 
   cases(E.Either) result block:
     | right(exn) =>
-      err-str = RED.display-to-string(exn-unwrap(exn).render-reason(), tostring, empty)
-      err(err-str + "\n")
-      d = [SD.string-dict: "type", J.j-str(query + "-failure")]
-      send-message(J.j-obj(d).serialize())
+      rendered = exn-unwrap(exn).render-reason()
+      if query == "check" block:
+        msg = RED.display-to-string(rendered, tostring, empty)
+        maybe-loc = Q.first-srcloc(rendered)
+        send-check-result([list: {msg; maybe-loc}], send-message)
+      else:
+        err-str = RED.display-to-string(rendered, tostring, empty)
+        err(err-str + "\n")
+        d = [SD.string-dict: "type", J.j-str(query + "-failure")]
+        send-message(J.j-obj(d).serialize())
+      end
     | left(info-result) =>
-      # NOTE: Each query is responsible for its own response serialization 
+      # NOTE: Each query is responsible for its own response serialization
       # here, since response shapes differ per feature.
-      # TODO: should probably refactor this
       ask:
         | query == "jump-to-def" then:
           cases(E.Either) info-result block:
-            | left(errors) =>
-              err("jump-to-def: no result (errors: " + torepr(errors) + ")\n")
+            | left(error-str) =>
+              err("jump-to-def: no result (errors: " + error-str + ")\n")
               d = [SD.string-dict: "type", J.j-str("jump-to-def-failure")]
               send-message(J.j-obj(d).serialize())
             | right(loc-info) =>
@@ -176,6 +207,8 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
               ]
               send-message(J.j-obj(d).serialize())
           end
+        | query == "check" then:
+          send-check-result(info-result, send-message)
       end
     end
 end
