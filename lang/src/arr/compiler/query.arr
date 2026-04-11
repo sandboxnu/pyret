@@ -91,7 +91,25 @@ end
 # site of a type that was defined by the user. Technically, the functionality implemented within # this function can be pushed into 'find-name-at'; however, this would require changing the return
 # type and thus might break some of the usages.
 fun find-ann-at(prog :: A.program, line :: Number, col :: Number) -> Option<A.Ann%(A.is-a-name)> block:
+  var result-ann = none
+  vis = A.defualt-iter-visitor.{
+    method a-name(self, l, id):
+      cases (Loc) l:
+        | builtin(_) => true
+        | srcloc(_, sl, sc, _, el, ec, _) =>
+          if (sl <= line) and (line <= el) and (sc <= col) and (col <= ec) block:
+            result-ann := some(A.a-name(l, id))
+            false
+          else:
+            true
+          end
+      end
+    end
+  }
+  prog.visit(vis)
+  result-ann
 end
+
 
 fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Either<String, {String; S.Srcloc}>:
   cases(Option) cache-manager.get-surface-ast(uri):
