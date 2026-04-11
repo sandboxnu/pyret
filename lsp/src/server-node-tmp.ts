@@ -1,8 +1,9 @@
 import { createConnection, ProposedFeatures } from "vscode-languageserver/node";
 
 import {
-  Connection,
   ServerCapabilities,
+  SymbolInformation,
+  SymbolKind,
   TextDocuments,
   TextDocumentSyncKind,
 } from "vscode-languageserver";
@@ -36,6 +37,10 @@ function getSocketPath(): string {
   }
 
   return path.join(dir, `comm-${process.pid}.sock`);
+}
+
+function uriToFilePath(uri: string): string {
+  return uri.startsWith("file://") ? decodeURIComponent(uri.slice(7)) : uri;
 }
 
 function startPyretServer(portFile: string): Promise<void> {
@@ -105,6 +110,7 @@ connection.onInitialize(async (_params) => {
   const capabilities: ServerCapabilities = {
     textDocumentSync: TextDocumentSyncKind.Incremental,
     definitionProvider: true,
+    documentSymbolProvider: true,
   };
 
   const portFile = getSocketPath();
@@ -126,30 +132,34 @@ connection.onShutdown((_params) => {
   shutdownPyretServer(portFile);
 });
 
-interface JumpToDefSuccess {
-  uri: string;
-  startLine: number;
-  startColumn: number;
-  endLine: number;
-  endColumn: number;
-}
-
 // NOTE(lsp): To add a new LSP feature:
-// 1. Add a send*Request function below (following this pattern)
-// 2. Add a connection.on* handler at the bottom that calls it
+// 1. Add a parseResponse callback for the new query type (following the pattern below)
+// 2. Add a connection.on* handler at the bottom that calls sendQueryRequest
 // 3. Register the capability in onInitialize
 // 4. Add an info-type case in server.arr's info handler
 // 5. Add the Pyret-side logic in lsp.arr
 
-function sendJumpToDefRequest(
+/** Send a query to the Pyret server over its Unix-domain WebSocket.
+ *  `parseResponse` receives each non-echo message and should return a parsed
+ *  result on success or `null` on failure/unrecognized messages. */
+function sendQueryRequest<T>(
   portFile: string,
+  query: string,
   filePath: string,
-  line: number,
-  col: number,
-): Promise<JumpToDefSuccess | null> {
+  queryOptions: object,
+  parseResponse: (msg: any) => T | null,
+): Promise<T | null> {
   return new Promise((resolve, reject) => {
     const client = new WebSocket("ws+unix://" + portFile);
     let settled = false;
+
+    const settle = (value: T | null) => {
+      if (!settled) {
+        settled = true;
+        client.close();
+        resolve(value);
+      }
+    };
 
     client.on("error", (err) => {
       if (!settled) {
@@ -162,49 +172,134 @@ function sendJumpToDefRequest(
       client.send(
         JSON.stringify({
           command: "query",
-          query: "jump-to-def",
+          query,
           compileOptions: JSON.stringify({
             program: filePath,
-            "base-dir": ".", // TODO
-          }), // TODO allow configuring default compileOptions
-          queryOptions: JSON.stringify({ line, col }),
+            "base-dir": ".", // TODO: allow configuring default compileOptions
+          }),
+          queryOptions: JSON.stringify(queryOptions),
         }),
       );
     });
 
     client.on("message", (data: WebSocket.RawData) => {
       const msg = JSON.parse(data.toString());
-      if (msg.type === "jump-to-def-success") {
-        if (!settled) {
-          settled = true;
-          resolve({
-            uri: msg.uri,
-            startLine: msg["start-line"],
-            startColumn: msg["start-column"],
-            endLine: msg["end-line"],
-            endColumn: msg["end-column"],
-          });
-        }
-      } else if (msg.type === "jump-to-def-failure") {
-        if (!settled) {
-          settled = true;
-          resolve(null);
-        }
-      } else if (msg.type === "echo-err") {
-        connection.console.error("[pyret jump-to-def] " + msg.contents);
+      if (msg.type === "echo-err") {
+        connection.console.error(`[pyret ${query}] ${msg.contents}`);
       } else if (msg.type === "echo-log") {
-        connection.console.log("[pyret jump-to-def] " + msg.contents);
+        connection.console.log(`[pyret ${query}] ${msg.contents}`);
+      } else {
+        settle(parseResponse(msg));
       }
     });
 
-    client.on("close", () => {
-      if (!settled) {
-        settled = true;
-        resolve(null);
-      }
-    });
+    client.on("close", () => settle(null));
   });
 }
+
+// --- Query response types & parsers ---
+
+interface JumpToDefSuccess {
+  uri: string;
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+}
+
+function parseJumpToDef(msg: any): JumpToDefSuccess | null {
+  if (msg.type === "jump-to-def-success") {
+    return {
+      uri: msg.uri,
+      startLine: msg["start-line"],
+      startColumn: msg["start-column"],
+      endLine: msg["end-line"],
+      endColumn: msg["end-column"],
+    };
+  }
+  return null;
+}
+
+interface DocumentSymbolItem {
+  name: string;
+  kind: string;
+  "start-line": number;
+  "start-column": number;
+  "end-line": number;
+  "end-column": number;
+}
+
+function parseDocumentSymbols(msg: any): DocumentSymbolItem[] | null {
+  if (msg.type === "document-symbols-success") {
+    return msg.symbols as DocumentSymbolItem[];
+  }
+  return null;
+}
+
+function pyretKindToSymbolKind(kind: string): SymbolKind {
+  switch (kind) {
+    case "vb-letrec":
+      return SymbolKind.Function;
+    case "vb-let":
+      return SymbolKind.Constant;
+    case "vb-var":
+      return SymbolKind.Variable;
+    case "type":
+      return SymbolKind.Class;
+    case "module":
+      return SymbolKind.Module;
+    default:
+      return SymbolKind.Variable;
+  }
+}
+
+// --- LSP request handlers ---
+
+connection.onDocumentSymbol(async (params) => {
+  const portFile = getSocketPath();
+  if (!fs.existsSync(portFile)) {
+    connection.console.error(
+      "Pyret server not running, cannot get document symbols",
+    );
+    return null;
+  }
+
+  const filePath = uriToFilePath(params.textDocument.uri);
+
+  try {
+    const symbols = await sendQueryRequest(
+      portFile,
+      "document-symbols",
+      filePath,
+      {},
+      parseDocumentSymbols,
+    );
+    if (!symbols) return null;
+
+    return symbols.map(
+      (sym): SymbolInformation => ({
+        name: sym.name,
+        kind: pyretKindToSymbolKind(sym.kind),
+        location: {
+          uri: params.textDocument.uri,
+          range: {
+            start: {
+              line: sym["start-line"] - 1,
+              character: sym["start-column"],
+            },
+            end: {
+              line: sym["end-line"] - 1,
+              character: sym["end-column"],
+            },
+          },
+        },
+      }),
+    );
+  } catch (err) {
+    connection.console.error(`document-symbols error: ${err}`);
+    return null;
+  }
+});
 
 connection.onDefinition(async (params) => {
   const portFile = getSocketPath();
@@ -218,18 +313,17 @@ connection.onDefinition(async (params) => {
   // LSP positions are 0-indexed; Pyret srclocs are 1-indexed
   const line = params.position.line + 1;
   const col = params.position.character + 1;
-
-  // Strip file:// scheme to get a plain file path
-  const fileUri = params.textDocument.uri;
-  const filePath = fileUri.startsWith("file://")
-    ? decodeURIComponent(fileUri.slice(7))
-    : fileUri;
+  const filePath = uriToFilePath(params.textDocument.uri);
 
   try {
-    const result = await sendJumpToDefRequest(portFile, filePath, line, col);
-    if (!result) {
-      return null;
-    }
+    const result = await sendQueryRequest(
+      portFile,
+      "jump-to-def",
+      filePath,
+      { line, col },
+      parseJumpToDef,
+    );
+    if (!result) return null;
 
     return {
       uri: result.uri,

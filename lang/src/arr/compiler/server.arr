@@ -77,7 +77,7 @@ fun handle-compile-opts(pyret-dir, msg, send-message) block:
     .set("log", log)
     .set("log-error", err)
     .set("this-pyret-dir", pyret-dir)
-    .set("compiled-read-only", link(P.resolve(P.join(pyret-dir, "lib-compiled")), empty))
+    .set("compiled-read-only", [list: P.resolve(P.join(pyret-dir, "lib-compiled")), P.resolve(P.join(pyret-dir, "compiled"))])
   opts-prim2 = if opts.has-key("perilous") and opts.get-value("perilous"):
       opts-prime.set("user-annotations", false)
     else:
@@ -142,6 +142,8 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
         line = query-opts.get-value("line")
         col = query-opts.get-value("col")
         Q.jump-to-def(cache-manager, base-uri, line, col)
+      | query == "document-symbols" then:
+        Q.document-symbols(cache-manager, base-uri)
     end
   end)
 
@@ -173,6 +175,30 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
                 "start-column", J.j-num(srcloc.start-column),
                 "end-line", J.j-num(srcloc.end-line),
                 "end-column", J.j-num(srcloc.end-column)
+              ]
+              send-message(J.j-obj(d).serialize())
+          end
+        | query == "document-symbols" then:
+          cases(E.Either) info-result block:
+            | left(errors) =>
+              err("document-symbols: no result (errors: " + torepr(errors) + ")\n")
+              d = [SD.string-dict: "type", J.j-str("document-symbols-failure")]
+              send-message(J.j-obj(d).serialize())
+            | right(symbols) =>
+              json-symbols = for map(sym from symbols):
+                srcloc = sym.{2}
+                J.j-obj([SD.string-dict:
+                  "name", J.j-str(sym.{0}),
+                  "kind", J.j-str(sym.{1}),
+                  "start-line", J.j-num(srcloc.start-line),
+                  "start-column", J.j-num(srcloc.start-column),
+                  "end-line", J.j-num(srcloc.end-line),
+                  "end-column", J.j-num(srcloc.end-column)
+                ])
+              end
+              d = [SD.string-dict:
+                "type", J.j-str("document-symbols-success"),
+                "symbols", J.j-arr(json-symbols)
               ]
               send-message(J.j-obj(d).serialize())
           end
