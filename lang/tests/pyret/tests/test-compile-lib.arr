@@ -413,7 +413,7 @@ check "raw-provide-syntax":
   l = SL.builtin("test-raw-provides")
 
   bn = lam(modname, name):
-    T.t-name(T.module-uri("builtin://" + modname), A.s-type-global(name), l, false)
+    T.t-name(T.module-uri("builtin://" + modname), A.s-type-global(l, name), l, false)
   end
   g = lam(name):
     bn("global", name)
@@ -452,7 +452,7 @@ check:
     # MARK(joe/ben): modules
     mt,
     [string-dict:
-      "x", CM.v-just-type(o("x"), T.t-name(T.module-uri("builtin://global"), A.s-global("Number"), A.dummy-loc, false))
+      "x", CM.v-just-type(o("x"), T.t-name(T.module-uri("builtin://global"), A.s-global(A.dummy-loc, "Number"), A.dummy-loc, false))
     ],
     mt,
     mt)
@@ -478,7 +478,7 @@ check:
   canon is CM.provides("test-provides1",
     mt, #MARK(joe/ben): modules
     [string-dict:
-      "x", CM.v-just-type(o("x"), T.t-name(T.module-uri("builtin://global"), A.s-global("Number"), A.dummy-loc, false))
+      "x", CM.v-just-type(o("x"), T.t-name(T.module-uri("builtin://global"), A.s-global(A.dummy-loc, "Number"), A.dummy-loc, false))
     ],
     mt,
     mt)

@@ -25,63 +25,38 @@ import file("locators/jsfile.arr") as JSF
 import file("locators/npm.arr") as NPM
 import file("js-of-pyret.arr") as JSP
 
-j-fun = J.j-fun
-j-var = J.j-var
-j-id = J.j-id
-j-method = J.j-method
-j-block = J.j-block
-j-true = J.j-true
-j-false = J.j-false
-j-num = J.j-num
-j-str = J.j-str
-j-return = J.j-return
-j-assign = J.j-assign
-j-if = J.j-if
-j-if1 = J.j-if1
-j-new = J.j-new
-j-app = J.j-app
-j-list = J.j-list
-j-obj = J.j-obj
-j-dot = J.j-dot
-j-bracket = J.j-bracket
-j-field = J.j-field
-j-dot-assign = J.j-dot-assign
-j-bracket-assign = J.j-bracket-assign
-j-try-catch = J.j-try-catch
-j-throw = J.j-throw
-j-expr = J.j-expr
-j-binop = J.j-binop
-j-and = J.j-and
-j-lt = J.j-lt
-j-eq = J.j-eq
-j-neq = J.j-neq
-j-geq = J.j-geq
-j-unop = J.j-unop
-j-decr = J.j-decr
-j-incr = J.j-incr
-j-not = J.j-not
-j-instanceof = J.j-instanceof
-j-ternary = J.j-ternary
-j-null = J.j-null
-j-parens = J.j-parens
-j-switch = J.j-switch
-j-case = J.j-case
-j-default = J.j-default
-j-label = J.j-label
-j-break = J.j-break
-j-while = J.j-while
-j-for = J.j-for
+include from J:
+  data JStmt,
+  data JExpr,
+  data JBlock,
+end
+
+include from E:
+  data Either
+end
+
+include from CS:
+  type Loadable
+end
 
 clist = C.clist
-
-type Loadable = CS.Loadable
-
-
-type Either = E.Either
 
 fun uri-to-path(uri, name):
   name + "-" + crypto.sha256(uri)
 end
+
+type CacheManager = {
+  cached-available :: (String, String, String, Number -> Option<Any>),
+  get-cached :: (String, String, String, Any -> Any),
+  get-cached-if-available :: (String, Any -> Any),
+  get-loadable :: (String, List<String>, Any, Any -> Option<Any>),
+  set-loadable :: (String, Any, Any -> String),
+  get-builtin-locator :: (String, List<String>, String -> Any),
+  set-surface-ast :: (String, Any -> Nothing),
+  get-surface-ast :: (String -> Option<Any>),
+  set-named-result :: (String, Any -> Nothing),
+  get-named-result :: (String -> Option<Any>)
+}
 
 # NOTE(joe): This is just a little one-off type to represent a simple
 # situation: Builtin pure-JS files are stored in single files with a hash
@@ -100,7 +75,7 @@ end
 # it's fine to pass a modified time of 0 to indicate that we're always happy
 # with the compiled version of the file.
 
-fun cached-available(basedir, uri, name, modified-time) -> Option<CachedType>:
+fun file-cached-available(basedir, uri, name, modified-time) -> Option<CachedType>:
   saved-path = Filesystem.join(basedir, uri-to-path(uri, name))
 
   if (Filesystem.exists(saved-path + "-static.js") and
@@ -114,7 +89,17 @@ fun cached-available(basedir, uri, name, modified-time) -> Option<CachedType>:
   end
 end
 
-fun get-cached(basedir, uri, name, cache-type):
+fun mem-cached-available(store, basedir, uri, name, _) -> Option<Nothing>:
+  key = basedir + uri + name
+  if store.has-key-now(key):
+    some(nothing)
+  else:
+    none
+  end
+end
+
+
+fun file-get-cached(basedir, uri, name, cache-type):
   saved-path = Filesystem.join(basedir, uri-to-path(uri, name))
   {static-path; module-path} = cases(CachedType) cache-type:
                 # NOTE(joe): leaving off .js because builtin-raw-locator below
@@ -172,16 +157,70 @@ fun get-cached(basedir, uri, name, cache-type):
   }
 end
 
-fun get-cached-if-available(basedir, loc) block:
-  get-cached-if-available-known-mtimes(basedir, loc, [SD.string-dict:])
+fun mem-get-cached(store, _, uri, name, _):
+  {
+    method get-uncached(_): none end,
+    method needs-compile(_, _): false end,
+    method get-modified-time(_): 0 end,
+    method get-options(_, options): options.{ checks: "none" } end,
+    method get-module(_):
+      cases(Option) store.get-now(uri):
+        | some(entry) =>
+          cases(Option) entry.surface-ast:
+            | some(ast) => CL.pyret-ast(ast)
+            | none => raise("No cached source for module " + uri)
+          end
+        | none => raise("No cached source for module " + uri)
+      end
+    end,
+    method get-extra-imports(_):
+      if CL.is-builtin-module(uri): CS.minimal-imports
+      else: CS.standard-imports
+      end
+    end,
+    method get-dependencies(_):
+      cases(Option) store.get-now(uri):
+        | some(entry) =>
+          cases(Option) entry.surface-ast:
+            | some(ast) =>
+              if CL.is-builtin-module(uri):
+                CL.get-dependencies(CL.pyret-ast(ast), uri)
+              else:
+                CL.get-standard-dependencies(CL.pyret-ast(ast), uri)
+              end
+            | none => empty
+          end
+        | none => empty
+      end
+    end,
+    method get-native-modules(_): [list:] end,
+    method get-globals(_): CS.standard-globals end,
+    method uri(_): uri end,
+    method name(_): name end,
+    method set-compiled(_, _, _): nothing end,
+    method get-compiled(_):
+      cases(Option) store.get-now(uri):
+        | some(entry) => entry.loadable
+        | none => none
+      end
+    end,
+    method _equals(self, other, req-eq):
+      req-eq(self.uri(), other.uri())
+    end
+  }
 end
-fun get-cached-if-available-known-mtimes(basedir, loc, max-dep-times) block:
+
+
+fun get-cached-if-available(cache-manager, basedir, loc) block:
+  get-cached-if-available-known-mtimes(cache-manager, basedir, loc, [SD.string-dict:])
+end
+fun get-cached-if-available-known-mtimes(cache-manager, basedir, loc, max-dep-times) block:
   saved-path = Filesystem.join(basedir, uri-to-path(loc.uri(), loc.name()))
   dependency-based-mtime =
     if max-dep-times.has-key(loc.uri()): max-dep-times.get-value(loc.uri())
     else: loc.get-modified-time()
     end
-  cached-type = cached-available(basedir, loc.uri(), loc.name(), dependency-based-mtime)
+  cached-type = cache-manager.cached-available(basedir, loc.uri(), loc.name(), dependency-based-mtime)
   cases(Option) cached-type:
     | none =>
       cases(Option) loc.get-uncached():
@@ -189,54 +228,53 @@ fun get-cached-if-available-known-mtimes(basedir, loc, max-dep-times) block:
         | none => loc
       end
 
-    | some(ct) => get-cached(basedir, loc.uri(), loc.name(), ct).{
+    | some(ct) => cache-manager.get-cached(basedir, loc.uri(), loc.name(), ct).{
         method get-uncached(self): some(loc) end
       }
   end
 end
 
-fun get-file-locator(basedir, real-path):
+fun get-file-locator(cache-manager, basedir, real-path):
   loc = FL.file-locator(real-path, CS.standard-globals)
-  get-cached-if-available(basedir, loc)
+  get-cached-if-available(cache-manager, basedir, loc)
 end
 
-fun get-builtin-locator(basedir, read-only-basedirs, modname):
+fun file-get-builtin-locator(cache-manager, basedir, read-only-basedirs, modname):
   all-dirs = read-only-basedirs
 
   first-available = for find(rob from all-dirs):
-    is-some(cached-available(rob, "builtin://" + modname, modname, 0))
+    is-some(cache-manager.cached-available(rob, "builtin://" + modname, modname, 0))
   end
   cases(Option) first-available:
     | none =>
       cases(Option) BL.maybe-make-builtin-locator(modname) block:
         | some(loc) =>
-          get-cached-if-available(basedir, loc)
+          get-cached-if-available(cache-manager, basedir, loc)
         | none =>
           raise("Could not find builtin module " + modname + " in any of " + all-dirs.join-str(", "))
       end
     | some(ro-basedir) =>
-      ca = cached-available(ro-basedir, "builtin://" + modname, modname, 0).or-else(split)
-      get-cached(ro-basedir, "builtin://" + modname, modname, ca)
+      ca = cache-manager.cached-available(ro-basedir, "builtin://" + modname, modname, 0).or-else(split)
+      cache-manager.get-cached(ro-basedir, "builtin://" + modname, modname, ca)
   end
 end
 
-fun get-builtin-test-locator(basedir, modname):
+fun get-builtin-test-locator(cache-manager, basedir, modname):
   loc = BL.make-builtin-locator(modname).{
     method uri(_): "builtin-test://" + modname end
   }
-  get-cached-if-available(basedir, loc)
+  cache-manager.get-cached-if-available(basedir, loc)
 end
 
-fun get-loadable(basedir, read-only-basedirs, l, max-dep-times) -> Option<Loadable>:
+fun get-loadable-impl(cache-manager, basedir, read-only-basedirs, l, max-dep-times) -> Option<Loadable>:
   locuri = l.locator.uri()
-#  cached = cached-available(basedir, l.locator.uri(), l.locator.name(), l.locator.get-modified-time())
   first-available = for find(rob from link(basedir, read-only-basedirs)):
-    is-some(cached-available(rob, l.locator.uri(), l.locator.name(), max-dep-times.get-value(locuri)))
+    is-some(cache-manager.cached-available(rob, l.locator.uri(), l.locator.name(), max-dep-times.get-value(locuri)))
   end
   cases(Option) first-available block:
     | none => none
-    | some(found-basedir) => 
-      c = cached-available(found-basedir, l.locator.uri(), l.locator.name(), max-dep-times.get-value(locuri))
+    | some(found-basedir) =>
+      c = cache-manager.cached-available(found-basedir, l.locator.uri(), l.locator.name(), max-dep-times.get-value(locuri))
       saved-path = Filesystem.join(found-basedir, uri-to-path(locuri, l.locator.name()))
       {static-path; module-path} = cases(CachedType) c.or-else(single-file):
         | split =>
@@ -298,6 +336,7 @@ end
 type CLIContext = {
   current-load-path :: String,
   cache-base-dir :: String,
+  compiled-read-only-dirs :: List<String>,
   url-file-mode :: CS.UrlFileMode
 }
 
@@ -316,17 +355,18 @@ fun maybe-add-slash(s):
   end
 end
 
-fun locate-file(ctxt :: CLIContext, rel-path :: String):
+fun locate-file(cache-manager :: CacheManager, ctxt :: CLIContext, rel-path :: String):
   clp = ctxt.current-load-path
   real-path = get-real-path(clp, rel-path)
   new-context = ctxt.{current-load-path: Filesystem.dirname(real-path)}
   if Filesystem.exists(real-path):
-    some(CL.located(get-file-locator(ctxt.cache-base-dir, real-path), new-context))
+    some(CL.located(get-file-locator(cache-manager, ctxt.cache-base-dir, real-path), new-context))
   else:
     none
   end
 end
-fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
+fun module-finder-with(cache-manager :: CacheManager, ctxt :: CLIContext, dep :: CS.Dependency):
+  shadow locate-file = locate-file(cache-manager, _, _)
   cases(CS.Dependency) dep:
     | dependency(protocol, args) =>
       if protocol == "file":
@@ -367,7 +407,7 @@ fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
         new-context = ctxt.{current-load-path: Filesystem.dirname(real-path)}
         CL.located(locator, new-context)
       else if protocol == "builtin-test":
-        l = get-builtin-test-locator(ctxt.cache-base-dir, args.first)
+        l = get-builtin-test-locator(cache-manager, ctxt.cache-base-dir, args.first)
         force-check-mode = l.{
           method get-options(self, options):
             options.{ checks: "all", type-check: false }
@@ -393,9 +433,10 @@ fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
         raise("Unknown import type: " + protocol)
       end
     | builtin(modname) =>
-      CL.located(get-builtin-locator(ctxt.cache-base-dir, ctxt.compiled-read-only-dirs, modname), ctxt)
+      CL.located(file-get-builtin-locator(cache-manager, ctxt.cache-base-dir, ctxt.compiled-read-only-dirs, modname), ctxt)
   end
 end
+
 
 default-start-context = {
   current-load-path: Filesystem.resolve("./"),
@@ -413,6 +454,7 @@ default-test-context = {
 
 fun compile(path, options):
   base-module = CS.dependency("file", [list: path])
+  shadow module-finder = module-finder-with(options.cache-manager, _, _)
   base = module-finder({
     current-load-path: Filesystem.resolve(options.base-dir),
     cache-base-dir: options.compiled-cache,
@@ -443,6 +485,120 @@ fun propagate-exit(result) block:
   end
 end
 
+fun make-file-cache() -> CacheManager:
+  {
+    cached-available: file-cached-available,
+    get-cached: file-get-cached,
+    method get-cached-if-available(self, basedir, loc):
+      get-cached-if-available(self, basedir, loc)
+    end,
+    method get-loadable(self, basedir, read-only-basedirs, l, max-dep-times):
+      get-loadable-impl(self, basedir, read-only-basedirs, l, max-dep-times)
+    end,
+    method set-loadable(self, basedir, locator, loadable):
+      set-loadable(basedir, locator, loadable)
+    end,
+    method get-builtin-locator(self, basedir, read-only-basedirs, modname):
+      file-get-builtin-locator(self, basedir, read-only-basedirs, modname)
+    end,
+    method set-surface-ast(self, _, _): nothing end,
+    method get-surface-ast(self, _): none end,
+    method set-named-result(self, _, _): nothing end,
+    method get-named-result(self, _): none end,
+  }
+end
+
+fun make-in-memory-cache() -> CacheManager:
+  store = [SD.mutable-string-dict:]
+
+  fun get-entry(uri):
+    store.get-now(uri)
+  end
+
+  fun update-entry(uri, updater):
+    existing = cases(Option) store.get-now(uri):
+      | some(v) => v
+      | none => { surface-ast: none, named-result: none, loadable: none }
+    end
+    store.set-now(uri, updater(existing))
+  end
+
+  {
+    # TODO: falling back to file-based lookup for builtins is a workaround;
+    # ideally builtins would be loaded into the in-memory store directly
+    cached-available: lam(basedir, uri, name, mtime):
+      if store.has-key-now(uri): some(nothing)
+      else if string-index-of(uri, "builtin://") == 0:
+        file-cached-available(basedir, uri, name, mtime)
+      else: none
+      end
+    end,
+    get-cached: lam(basedir, uri, name, cache-type):
+      if store.has-key-now(uri):
+        mem-get-cached(store, basedir, uri, name, cache-type)
+      else if string-index-of(uri, "builtin://") == 0:
+        file-get-cached(basedir, uri, name, cache-type)
+      else:
+        raise("No in-memory cache entry for non-builtin module " + uri)
+      end
+    end,
+    method get-cached-if-available(self, _, loc):
+      if store.has-key-now(loc.uri()):
+        self.get-cached("", loc.uri(), loc.name(), nothing).{
+          method get-uncached(_): some(loc) end
+        }
+      else:
+        cases(Option) loc.get-uncached():
+          | some(shadow loc) => loc
+          | none => loc
+        end
+      end
+    end,
+    method get-loadable(self, basedir, read-only-basedirs, l, max-dep-times):
+      cases(Option) get-entry(l.locator.uri()):
+        | some(e) => e.loadable
+        | none =>
+          # Fall back to file-based lookup for builtins so they land in
+          # starter-modules and skip compile-module entirely.
+          if string-index-of(l.locator.uri(), "builtin://") == 0:
+            get-loadable-impl(self, basedir, read-only-basedirs, l, max-dep-times)
+          else:
+            none
+          end
+      end
+    end,
+    method set-loadable(self, _, locator, loadable) block:
+      update-entry(locator.uri(), lam(e): e.{loadable: some(loadable)} end)
+      locator.uri()
+    end,
+    # TODO: builtins should be loaded into the in-memory store rather than
+    # going through file-based lookup. Blocked on having a serialization
+    # format for Loadable that doesn't depend on the JS file infrastructure
+    # (builtin-raw-locator / -static.js / -module.js).
+    method get-builtin-locator(self, basedir, read-only-basedirs, modname):
+      file-get-builtin-locator(self, basedir, read-only-basedirs, modname)
+    end,
+    method set-surface-ast(self, uri, ast):
+      update-entry(uri, lam(e): e.{surface-ast: some(ast)} end)
+    end,
+    method get-surface-ast(self, uri):
+      cases(Option) get-entry(uri):
+        | some(e) => e.surface-ast
+        | none => none
+      end
+    end,
+    method set-named-result(self, uri, named-result):
+      update-entry(uri, lam(e): e.{named-result: some(named-result)} end)
+    end,
+    method get-named-result(self, uri):
+      cases(Option) get-entry(uri):
+        | some(e) => e.named-result
+        | none => none
+      end
+    end,
+  }
+end
+
 fun run(path, options, subsequent-command-line-arguments):
   stats = SD.make-mutable-string-dict()
   maybe-program = build-program(path, options, stats)
@@ -461,9 +617,32 @@ fun run(path, options, subsequent-command-line-arguments):
   end
 end
 
+# TODO: this shares a lot of commonality with `build-program`.
+fun compile-for-query(options, program) block:
+  base-module = CS.dependency("file", [list: program])
+  shadow module-finder = module-finder-with(options.cache-manager, _, _)
+  base = module-finder({
+    current-load-path: Filesystem.resolve(options.base-dir),
+    cache-base-dir: options.compiled-cache,
+    compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
+    url-file-mode: options.url-file-mode
+  }, base-module)
+  wl = CL.compile-worklist(module-finder, base.locator, base.context)
+  # starter-modules = CL.modules-from-worklist(wl,
+  #   lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
+  starter-modules = CL.modules-from-worklist(wl, options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
+  CL.compile-program-with(wl, starter-modules, options)
+  base.locator.uri()
+end
+
 fun build-program(path, options, stats) block:
   doc: ```Returns the program as a JavaScript AST of module list and dependency map,
           and its native dependencies as a list of strings```
+
+  # TODO: this should probably refactored into default opts
+  shadow options = options.{
+    cache-manager: if options.query: make-in-memory-cache() else: make-file-cache() end
+  }
 
   print-progress-clearing = lam(s, to-clear):
     when options.display-progress:
@@ -478,6 +657,7 @@ fun build-program(path, options, stats) block:
   end
   print-progress(str)
   base-module = CS.dependency("file", [list: path])
+  shadow module-finder = module-finder-with(options.cache-manager, _, _)
   base = module-finder({
     current-load-path: Filesystem.resolve(options.base-dir),
     cache-base-dir: options.compiled-cache,
@@ -490,12 +670,13 @@ fun build-program(path, options, stats) block:
   max-dep-times = CL.dep-times-from-worklist(wl)
 
   shadow wl = for map(located from wl):
-    located.{ locator: get-cached-if-available-known-mtimes(options.compiled-cache, located.locator, max-dep-times) }
+    located.{ locator: get-cached-if-available-known-mtimes(options.cache-manager, options.compiled-cache, located.locator, max-dep-times) }
   end
 
   clear-and-print("Loading existing compiled modules...")
 
-  starter-modules = CL.modules-from-worklist(wl, get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
+  starter-modules = CL.modules-from-worklist(wl,
+    options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
 
   cached-modules = starter-modules.count-now()
   total-modules = wl.length() - cached-modules
@@ -550,7 +731,7 @@ fun build-runnable-standalone(path, require-config-path, outfile, options) block
     | none => nothing
     | some(tb) =>
       cases(JSON.JSON) tb:
-        | j-arr(l) => 
+        | j-arr(l) =>
           BL.set-typable-builtins(l.map(_.s))
         | else => raise("Expected a list for typable-builtins, but got: " + to-repr(tb))
       end
@@ -578,7 +759,7 @@ fun build-runnable-standalone(path, require-config-path, outfile, options) block
       end
 
       ans = make-standalone-res and html-res
-      
+
       when options.collect-times block:
         standalone-end = time-now() - stats.get-value-now("standalone")
         stats.set-now("standalone", [list: "Outputing JS: " + tostring(standalone-end) + "ms"])
@@ -608,3 +789,7 @@ fun build-require-standalone(path, options):
 
   print(prog.to-ugly-source())
 end
+
+
+# backwards compatibility
+module-finder = module-finder-with(make-file-cache(), _, _)

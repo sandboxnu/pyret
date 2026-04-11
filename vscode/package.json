@@ -3,7 +3,7 @@
 	"displayName": "Pyret Interactive Editor for VSCode",
 	"description": "An interactive Pyret mode",
 	"icon": "media/pyret-logo-128.png",
-	"version": "0.42.40",
+	"version": "0.42.43",
 	"publisher": "PyretProgrammingLanguage",
 	"private": true,
 	"license": "Apache-2.0",
@@ -22,6 +22,7 @@
 		"syntaxes/pyret.tmLanguage.json"
 	],
 	"browser": "./dist/web/extension.js",
+  "main": "./dist/extension.js",
 	"contributes": {
 		"languages": [
 			{
@@ -118,7 +119,14 @@
 						"Load `url-file()` imports from the local filesystem if they exist, otherwise from the URL"
 					],
 					"description": "Controls how `url-file()` imports are resolved"
-				}
+				},
+        "pyret.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "verbose",
+          "scope": "resource",
+          "description": "Traces logs of the communication between VS Code and the language server."
+        }
 			}
 		}
 	},
@@ -147,6 +155,7 @@
 		"yo": "^5.1.0"
 	},
 	"dependencies": {
-		"mustache": "^4.2.0"
+		"mustache": "^4.2.0",
+		"vscode-languageclient": "^9.0.1"
 	}
 }
