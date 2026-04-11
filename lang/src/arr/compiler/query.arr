@@ -68,8 +68,6 @@ fun document-symbols(cache-manager, uri :: String)
         end
       end
 
-          # NOTE: module-env is skipped because all module bindings come from
-          # import statements (both explicit and implicit), not definitions.
           E.right(value-symbols + type-symbols)
       end
   end
