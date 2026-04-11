@@ -637,10 +637,23 @@ fun compile-for-query(options, program) block:
     compiled-read-only-dirs: options.compiled-read-only.map(Filesystem.resolve),
     url-file-mode: options.url-file-mode
   }, base-module)
-  wl = CL.compile-worklist(module-finder, base.locator, base.context)
-  # starter-modules = CL.modules-from-worklist(wl,
-  #   lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
-  starter-modules = CL.modules-from-worklist(wl, options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
+  # Use the uncached (file) locator for the base file so it always reads source
+  # from disk. The mem-get-cached locator's get-module() returns a stale in-memory
+  # AST and get-compiled() returns a stale loadable — bypassing it ensures we
+  # always see the current file state for diagnostics and jump-to-def.
+  base-locator = cases(Option) base.locator.get-uncached():
+    | some(orig) => orig
+    | none => base.locator
+  end
+  base-uri = base-locator.uri()
+  wl = CL.compile-worklist(module-finder, base-locator, base.context)
+  starter-modules = CL.modules-from-worklist(wl, lam(l, max-dep-times):
+    if l.locator.uri() == base-uri:
+      none
+    else:
+      options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), l, max-dep-times)
+    end
+  end)
   compiled = CL.compile-program-with(wl, starter-modules, options)
   {base.locator.uri(); compiled}
 end
