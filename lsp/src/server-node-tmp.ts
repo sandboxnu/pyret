@@ -386,14 +386,40 @@ connection.onDefinition(async (params) => {
   }
 });
 
+const documents = new TextDocuments(TextDocument);
+
+// Track the document version at last save per URI. VS Code triggers
+// textDocument/diagnostic on didChange (before auto-save writes to disk), so
+// we defer compilation until the saved version matches the current version.
+const savedVersions = new Map<string, number>();
+
+documents.onDidOpen((e) => {
+  savedVersions.set(e.document.uri, e.document.version ?? 0);
+});
+
+documents.onDidSave((e) => {
+  savedVersions.set(e.document.uri, e.document.version ?? 0);
+  // Tell VS Code to re-request diagnostics now that the file is on disk.
+  connection.languages.diagnostics.refresh();
+});
+
 connection.languages.diagnostics.on(async (params) => {
   const portFile = getSocketPath();
   if (!fs.existsSync(portFile)) {
     return { kind: DocumentDiagnosticReportKind.Full, items: [] };
   }
 
-  const filePath = uriToFilePath(params.textDocument.uri);
+  const fileUri = params.textDocument.uri;
 
+  // If the document has unsaved changes, the on-disk content is stale.
+  // Return empty now; onDidSave will call refresh() once the file is saved.
+  const doc = documents.get(fileUri);
+  const savedVersion = savedVersions.get(fileUri) ?? doc?.version;
+  if (doc && doc.version !== savedVersion) {
+    return { kind: DocumentDiagnosticReportKind.Full, items: [] };
+  }
+  const filePath = uriToFilePath(fileUri)
+  
   try {
     const rawDiagnostics = await sendCheckRequest(portFile, filePath);
     if (!rawDiagnostics) {
@@ -422,6 +448,5 @@ connection.languages.diagnostics.on(async (params) => {
   }
 });
 
-const documents = new TextDocuments(TextDocument);
 documents.listen(connection);
 connection.listen();

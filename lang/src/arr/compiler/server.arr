@@ -6,6 +6,7 @@ end
 import either as E
 import json as J
 import pathlib as P
+import srcloc as SL
 import string-dict as SD
 import render-error-display as RED
 import js-file("server") as S
@@ -179,7 +180,15 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
       rendered = exn-unwrap(exn).render-reason()
       if query == "check" block:
         msg = RED.display-to-string(rendered, tostring, empty)
-        maybe-loc = Q.first-srcloc(rendered)
+        # Parse errors have a .loc field directly; other exceptions may not.
+        exn-obj = exn-unwrap(exn)
+        maybe-loc = cases(E.Either) run-task(lam():
+          l = exn-obj.loc
+          if SL.is-srcloc(l): some(l) else: none end
+        end):
+          | left(loc-result) => loc-result
+          | right(_) => Q.first-srcloc(rendered)
+        end
         send-check-result([list: {msg; maybe-loc}], send-message)
       else:
         err-str = RED.display-to-string(rendered, tostring, empty)
