@@ -126,13 +126,18 @@ connection.onShutdown((_params) => {
   shutdownPyretServer(portFile);
 });
 
-interface JumpToDefSuccess {
+interface Location {
   uri: string;
   startLine: number;
   startColumn: number;
   endLine: number;
   endColumn: number;
 }
+
+type JumpToDefSuccess = Location
+
+type FindAllReferencesSuccess = Location[]
+
 
 // NOTE(lsp): To add a new LSP feature:
 // 1. Add a send*Request function below (following this pattern)
@@ -206,6 +211,65 @@ function sendJumpToDefRequest(
   });
 }
 
+function sendFindAllReferencesRequest(
+  portFile: string,
+  filePath: string,
+  line: number,
+  col: number,
+): Promise<FindAllReferencesSuccess | null> {
+  return new Promise((resolve, reject) => {
+    const client = new WebSocket("ws+unix://" + portFile);
+    let settled = false;
+
+    client.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
+
+    client.on("open", () => {
+      client.send(
+        JSON.stringify({
+          command: "query",
+          query: "find-all-references",
+          compileOptions: JSON.stringify({
+            program: filePath,
+            "base-dir": ".", // TODO
+          }), // TODO allow configuring default compileOptions
+          queryOptions: JSON.stringify({ line, col }),
+        }),
+      );
+    });
+
+    client.on("message", (data: WebSocket.RawData) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === "find-all-references-success") {
+        if (!settled) {
+          settled = true;
+          resolve([]);
+        }
+      } else if (msg.type === "find-all-references-failure") {
+        if (!settled) {
+          settled = true;
+          resolve(null);
+        }
+      } else if (msg.type === "echo-err") {
+        connection.console.error("[pyret find-all-references] " + msg.contents);
+      } else if (msg.type === "echo-log") {
+        connection.console.log("[pyret find-all-references] " + msg.contents);
+      }
+    });
+
+    client.on("close", () => {
+      if (!settled) {
+        settled = true;
+        resolve(null);
+      }
+    });
+  });
+}
+
 connection.onDefinition(async (params) => {
   const portFile = getSocketPath();
   if (!fs.existsSync(portFile)) {
@@ -246,6 +310,38 @@ connection.onDefinition(async (params) => {
     return null;
   }
 });
+
+connection.onReferences(async (params) => {
+  const portFile = getSocketPath();
+  if (!fs.existsSync(portFile)) {
+    connection.console.error(
+      "Pyret server not running, cannot find all references",
+    );
+    return null;
+  }
+
+  // LSP positions are 0-indexed; Pyret srclocs are 1-indexed
+  const line = params.position.line + 1;
+  const col = params.position.character + 1;
+
+  // Strip file:// scheme to get a plain file path
+  const fileUri = params.textDocument.uri;
+  const filePath = fileUri.startsWith("file://")
+    ? decodeURIComponent(fileUri.slice(7))
+    : fileUri;
+
+  try {
+    const result = await sendFindAllReferencesRequest(portFile, filePath, line, col);
+    if (!result) {
+      return null;
+    }
+
+    return []
+  } catch (err) {
+    connection.console.error(`find-all-references error: ${err}`);
+    return null;
+  }
+})
 
 const documents = new TextDocuments(TextDocument);
 documents.listen(connection);

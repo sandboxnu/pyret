@@ -142,6 +142,12 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
         line = query-opts.get-value("line")
         col = query-opts.get-value("col")
         Q.jump-to-def(cache-manager, base-uri, line, col)
+      | query == "find-all-references" then: 
+        line = query-opts.get-value("line")
+        col = query-opts.get-value("col")
+          # BOBBY-TODO add the actual query here
+        E.right({1})
+
     end
   end)
 
@@ -176,6 +182,18 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
               ]
               send-message(J.j-obj(d).serialize())
           end
+        | query == "find-all-references" then: 
+          cases(E.either) info-result block: 
+            | left(errors) =>
+              err("find-all-references: no result (errors: " + torepr(errors) + ")\n")
+              d = [SD.string-dict: "type", J.j-str("find-all-references-failure")]
+              send-message(J.j-obj(d).serialize())
+            | right(loc-info) => 
+              # BOBBY-TODO parse response from language server into json
+              d = J.j-arr([list: loc-info.{0}])
+              send-message(d.serialize())
+          end
+              
       end
     end
 end
