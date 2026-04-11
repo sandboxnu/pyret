@@ -87,6 +87,12 @@ fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.N
   result-name
 end
 
+# Note(Jacob): This function was made to be a separate helper for when we need to jump to the definition
+# site of a type that was defined by the user. Technically, the functionality implemented within # this function can be pushed into 'find-name-at'; however, this would require changing the return
+# type and thus might break some of the usages.
+fun find-ann-at(prog :: A.program, line :: Number, col :: Number) -> Option<A.Ann%(A.is-a-name)> block:
+end
+
 fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Either<String, {String; S.Srcloc}>:
   cases(Option) cache-manager.get-surface-ast(uri):
     | none => E.left("AST not available")
