@@ -59,6 +59,14 @@ fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: A.Loc) -> Option<St
         true
       end
     end
+    method a-name(self, l, id):
+      if l == srcloc block:
+        result-mangled-name := some(id.key())
+        false
+      else:
+        true
+      end
+    end
   }
 
   resolved.visit(visitor)
@@ -115,19 +123,32 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
   cases(Option) cache-manager.get-surface-ast(uri):
     | none => E.left("AST not available")
     | some(ast) =>
-      cases(Option) find-name-at(ast, line, col):
-        | none => E.left("Did not select an identifier")
-        | some(name) =>
-          cases(Option) cache-manager.get-named-result(uri):
-            | none => E.left("Resolved AST not available")
-            | some(named-result) =>
-              cases(Option) find-name-key-by-srcloc(named-result.ast, name.l):
+      cases(Option) cache-manager.get-named-result(uri):
+        | none => E.left("Resolved AST not available")
+        | some(named-result) =>
+          cases(Option) AU.find-name-at(ast, line, col):
+            | some(name) =>
+              cases(Option) AU.find-name-key-by-srcloc(named-result.ast, name.l):
                 | none => E.left("Post-resolution name not found")
                 | some(key) =>
                   cases(Option) named-result.env.bindings.get-now(key):
-                    | none => E.left("No identifier binding found")
+                    | none => E.left("No value identifier binding found")
                     | some(vb) =>
                       E.right({vb.origin.uri-of-definition; vb.origin.definition-bind-site})
+                  end
+              end
+            | none =>
+              cases(Option) AU.find-ann-at(ast, line, col):
+                | none => E.left("Did not select an identifier")
+                | some(ann) =>
+                  cases(Option) AU.find-name-key-by-srcloc(named-result.ast, ann.l):
+                    | none => E.left("Post-resolution name not found")
+                    | some(key) =>
+                      cases(Option) named-result.env.type-bindings.get-now(key):
+                        | none => E.left("No type identifier binding found")
+                        | some(tb) =>
+                          E.right({tb.origin.uri-of-definition; tb.origin.definition-bind-site})
+                      end
                   end
               end
           end
