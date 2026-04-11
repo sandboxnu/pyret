@@ -37,6 +37,7 @@ end
 
 include from CS:
   type Loadable
+  type NameResolution
 end
 
 clist = C.clist
@@ -49,13 +50,19 @@ type CacheManager = {
   cached-available :: (String, String, String, Number -> Option<Any>),
   get-cached :: (String, String, String, Any -> Any),
   get-cached-if-available :: (String, Any -> Any),
-  get-loadable :: (String, List<String>, Any, Any -> Option<Any>),
-  set-loadable :: (String, Any, Any -> String),
-  get-builtin-locator :: (String, List<String>, String -> Any),
-  set-surface-ast :: (String, Any -> Nothing),
-  get-surface-ast :: (String -> Option<Any>),
-  set-named-result :: (String, Any -> Nothing),
-  get-named-result :: (String -> Option<Any>)
+  get-loadable :: (String, List<String>, Any, Any -> Option<Loadable>),
+  set-loadable :: (String, CL.Locator, Loadable -> String),
+  get-builtin-locator :: (String, List<String>, String -> CL.Locator),
+  set-surface-ast :: (String, A.Expr -> Nothing),
+  get-surface-ast :: (String -> Option<A.Expr>),
+  set-named-result :: (String, NameResolution -> Nothing),
+  get-named-result :: (String -> Option<NameResolution>)
+}
+
+type CacheValue = {
+  surface-ast :: Option<A.Expr>, 
+  named-result :: Option<NameResolution>,
+  loadable :: Option<Loadable>
 }
 
 # NOTE(joe): This is just a little one-off type to represent a simple
@@ -89,6 +96,8 @@ fun file-cached-available(basedir, uri, name, modified-time) -> Option<CachedTyp
   end
 end
 
+# TODO: this is not currently wired up
+# Note: returning an Option is needed for compatibility with `file-cached-available`
 fun mem-cached-available(store, basedir, uri, name, _) -> Option<Nothing>:
   key = basedir + uri + name
   if store.has-key-now(key):
@@ -98,7 +107,9 @@ fun mem-cached-available(store, basedir, uri, name, _) -> Option<Nothing>:
   end
 end
 
-
+# Note: `mem-get-cached` and `file-get-cached` both return an object
+# with the same methods on it
+# TODO: extract this into a better type
 fun file-get-cached(basedir, uri, name, cache-type):
   saved-path = Filesystem.join(basedir, uri-to-path(uri, name))
   {static-path; module-path} = cases(CachedType) cache-type:
@@ -509,7 +520,7 @@ fun make-file-cache() -> CacheManager:
 end
 
 fun make-in-memory-cache() -> CacheManager:
-  store = [SD.mutable-string-dict:]
+  store :: SD.MutableStringDict<CacheValue> = [SD.mutable-string-dict:]
 
   fun get-entry(uri):
     store.get-now(uri)
@@ -631,8 +642,8 @@ fun compile-for-query(options, program) block:
   # starter-modules = CL.modules-from-worklist(wl,
   #   lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
   starter-modules = CL.modules-from-worklist(wl, options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
-  CL.compile-program-with(wl, starter-modules, options)
-  base.locator.uri()
+  compiled = CL.compile-program-with(wl, starter-modules, options)
+  {base.locator.uri(); compiled}
 end
 
 fun build-program(path, options, stats) block:
