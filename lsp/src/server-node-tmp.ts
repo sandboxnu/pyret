@@ -1,6 +1,9 @@
 import { createConnection, ProposedFeatures } from "vscode-languageserver/node";
 
 import {
+  Diagnostic,
+  DiagnosticSeverity,
+  DocumentDiagnosticReportKind,
   ServerCapabilities,
   SymbolInformation,
   SymbolKind,
@@ -111,6 +114,10 @@ connection.onInitialize(async (_params) => {
     textDocumentSync: TextDocumentSyncKind.Incremental,
     definitionProvider: true,
     documentSymbolProvider: true,
+    diagnosticProvider: {
+      interFileDependencies: false,
+      workspaceDiagnostics: false,
+    },
   };
 
   const portFile = getSocketPath();
@@ -136,8 +143,8 @@ connection.onShutdown((_params) => {
 // 1. Add a parseResponse callback for the new query type (following the pattern below)
 // 2. Add a connection.on* handler at the bottom that calls sendQueryRequest
 // 3. Register the capability in onInitialize
-// 4. Add an info-type case in server.arr's info handler
-// 5. Add the Pyret-side logic in lsp.arr
+// 4. Add an query case in server.arr's query handler
+// 5. Add the Pyret-side logic in query.arr
 
 /** Send a query to the Pyret server over its Unix-domain WebSocket.
  *  `parseResponse` receives each non-echo message and should return a parsed
@@ -150,6 +157,7 @@ function sendQueryRequest<T>(
   parseResponse: (msg: any) => T | null,
 ): Promise<T | null> {
   return new Promise((resolve, reject) => {
+    // FIXME: close client
     const client = new WebSocket("ws+unix://" + portFile);
     let settled = false;
 
@@ -253,6 +261,68 @@ function pyretKindToSymbolKind(kind: string): SymbolKind {
   }
 }
 
+interface CheckDiagnostic {
+  message: string;
+  "start-line"?: number;
+  "start-column"?: number;
+  "end-line"?: number;
+  "end-column"?: number;
+}
+
+function sendCheckRequest(
+  portFile: string,
+  filePath: string,
+): Promise<CheckDiagnostic[]> {
+  return new Promise((resolve, reject) => {
+    const client = new WebSocket("ws+unix://" + portFile);
+    let settled = false;
+
+    client.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
+
+    client.on("open", () => {
+      client.send(
+        JSON.stringify({
+          command: "query",
+          query: "check",
+          compileOptions: JSON.stringify({ program: filePath }),
+          queryOptions: JSON.stringify({}),
+        }),
+      );
+    });
+
+    client.on("message", (data: WebSocket.RawData) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === "check-success") {
+        if (!settled) {
+          settled = true;
+          resolve(msg.diagnostics ?? []);
+        }
+      } else if (msg.type === "check-failure") {
+        if (!settled) {
+          settled = true;
+          resolve([]);
+        }
+      } else if (msg.type === "echo-err") {
+        connection.console.error("[pyret check] " + msg.contents);
+      } else if (msg.type === "echo-log") {
+        connection.console.log("[pyret check] " + msg.contents);
+      }
+    });
+
+    client.on("close", () => {
+      if (!settled) {
+        settled = true;
+        resolve([]);
+      }
+    });
+  });
+}
+
 // --- LSP request handlers ---
 
 connection.onDocumentSymbol(async (params) => {
@@ -338,6 +408,44 @@ connection.onDefinition(async (params) => {
   } catch (err) {
     connection.console.error(`jump-to-def error: ${err}`);
     return null;
+  }
+});
+
+connection.languages.diagnostics.on(async (params) => {
+  const portFile = getSocketPath();
+  if (!fs.existsSync(portFile)) {
+    return { kind: DocumentDiagnosticReportKind.Full, items: [] };
+  }
+
+  const fileUri = params.textDocument.uri;
+  const filePath = fileUri.startsWith("file://")
+    ? decodeURIComponent(fileUri.slice(7))
+    : fileUri;
+
+  try {
+    const rawDiagnostics = await sendCheckRequest(portFile, filePath);
+    const items: Diagnostic[] = rawDiagnostics.map((d) => {
+      const hasLoc = d["start-line"] !== undefined;
+      return {
+        severity: DiagnosticSeverity.Error,
+        range: {
+          start: {
+            line: hasLoc ? d["start-line"]! - 1 : 0,
+            character: hasLoc ? d["start-column"]! : 0,
+          },
+          end: {
+            line: hasLoc ? d["end-line"]! - 1 : 0,
+            character: hasLoc ? d["end-column"]! : 0,
+          },
+        },
+        message: d.message,
+        source: "pyret",
+      };
+    });
+    return { kind: DocumentDiagnosticReportKind.Full, items };
+  } catch (err) {
+    connection.console.error(`diagnostic error: ${err}`);
+    return { kind: DocumentDiagnosticReportKind.Full, items: [] };
   }
 });
 
