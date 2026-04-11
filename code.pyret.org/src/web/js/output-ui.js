@@ -520,7 +520,7 @@
               while (todo.length > 0) {
                 var first = todo.pop();
                 if (runtime.hasField(first, "l")) {
-                  // not every AST item has an "l" field (eg. s-global, s-type-global, s-base)
+                  // not every AST item has an "l" field (eg. s-defined-module, s-defined-value, s-defined-var, etc)
                   var l = runtime.getField(first, "l");
                   if (isSrcloc.app(l)) { // just extra checking; should be unnecessary
                     if (runtime.equal_always(l, loc)) { // stack-safe because srclocs are flat data

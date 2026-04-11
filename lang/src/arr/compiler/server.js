@@ -1,22 +1,31 @@
-{
+/** @satisfies {PyretModule} */
+({
   provides: {
     values: {
       "make-server": "tany"
     }
   },
   requires: [],
-  nativeRequires: ['http', 'ws'],
-  theModule: function(runtime, _, uri, http, ws) {
+  nativeRequires: ['http', 'ws', 'fs'],
+  theModule: function(
+    runtime,
+    _,
+    uri,
+    /** @type {import('node:http')} */ http,
+    ws,
+    /** @type {import('node:fs')} */ fs,
+  ) {
+    /** @import ws from "ws"  */
 
     const INFO = 4;
     const LOG = 3;
     const WARN = 2;
     const ERROR = 1;
     const SILENT = 0;
-    var LOG_LEVEL = ERROR;
+    let LOG_LEVEL = ERROR;
 
-    function makeLogger(level) {
-      return function(...args) {
+    function makeLogger(/** @type {number} */ level) {
+      return function(/** @type {...any} */...args) {
         if(LOG_LEVEL >= level) {
           console.log.apply(console, ["[server] ", new Date()].concat(args));
         }
@@ -30,13 +39,57 @@
 
 
     // Port is a string for a file path, like /tmp/some-sock,
-    const makeServer = function(port, onmessage) {
+    const makeServer = function(
+      /** @type {string} */ port,
+      /** @type {PyretFunction} */ onCompile,
+      /** @type {PyretFunction} */ onQuery,
+    ) {
+      /**
+       * @typedef {{respondForPy: PyretFunction, respondJSON: function, closeConn: function}} QueueCommon
+       * @typedef {{command: 'compile', options: unknown}} CompileQueueItem
+       * @typedef {{command: 'query', query: string, compileOptions: unknown, queryOptions: unknown}} QueryQueueItem
+       * @typedef {QueueCommon & (CompileQueueItem | QueryQueueItem)} QueueItem
+       */
 
-      var runQueue = [];
+      /** @type {QueueItem[]} */
+      let runQueue = [];
+      let running = false;
+
+      function tryQueue() {
+        if (running || runQueue.length === 0) { return; }
+        running = true;
+        const current = /** @type {QueueItem} */ (runQueue.shift());
+        info(`Running queued command: ${current.command}, queue length now ${runQueue.length}`);
+        runtime.runThunk(function() {
+          const { respondForPy: respond } = current;
+          switch (current.command) {
+            case 'compile':
+              return onCompile.app(current.options, respond);
+            case 'query':
+              return onQuery.app(current.query, current.compileOptions, current.queryOptions, current.respondForPy);
+          }
+        }, function(result) {
+          if (runtime.isFailureResult(result)) {
+            const exn = result.exn;
+            const inner = exn && exn.exn !== undefined ? exn.exn : exn;
+            error("Failed (raw exn):", inner);
+            error("Failed (stack):", exn && exn.stack);
+            error("Failed (pyretStack):", exn && exn.pyretStack);
+            const exnStr = inner !== undefined
+              ? (typeof inner === 'object' ? JSON.stringify(inner) : String(inner))
+              : String(exn);
+            current.respondJSON({type: "echo-err", contents: "Internal error: " + exnStr});
+            if (exn && exn.stack) { current.respondJSON({type: "echo-err", contents: exn.stack}); }
+          }
+          current.closeConn();
+          running = false;
+          tryQueue();
+        });
+      }
 
       //info("Starting up server");
       return runtime.pauseStack(function(restarter) {
-        var server = http.createServer(function(request, response) {
+        const server = http.createServer(function(request, response) {
           response.writeHead(404);
           response.end();
         });
@@ -58,76 +111,80 @@
           }
         });
 
-        var wsServer = new ws.Server({
+        /** @type {ws.Server} */
+        const wsServer = new ws.Server({
           server: server
         });
 
         wsServer.on('connection', function(connection) {
-
-          function respond(jsonData) {
+          function respond(/** @type {string} */ jsonData) {
             info("Sending: ", jsonData);
             connection.send(jsonData);
             return runtime.nothing;
           }
-          function respondJSON(json) { return respond(JSON.stringify(json)); }
+          function respondJSON(/** @type {*} */ json) { return respond(JSON.stringify(json)); }
           const respondForPy = runtime.makeFunction(respond, "respond");
+          function closeConn() { connection.close(); }
 
-          function tryQueue() {
-            info("Trying run queue, length is ", runQueue.length);
-            if(runQueue.length > 0) {
-              var current = runQueue.pop();
-              runtime.runThunk(function() {
-                return onmessage.app(current, respondForPy);
-              }, function(result) {
-                if(runtime.isFailureResult(result)) {
-                  error("Failed: ", result.exn.exn, result.exn.stack, result.exn.pyretStack);
-                  respondJSON({type: "echo-err", contents: "There was an internal error, please report this as a bug"});
-                  respondJSON({type: "echo-err", contents: String(result.exn.exn) });
-                  connection.close();
-                  // restarter.error(result.exn);
-                }
-                else {
-                  connection.close();
-                  // info("Success: ", result);
-                }
+
+          info(`${new Date()} Connection accepted.`);
+
+
+          /**
+           * @typedef {{command: 'stop'} |
+           *           {command: 'shutdown'} |
+           *           {command: 'compile', compileOptions: unknown} |
+           *           {command: 'query', query: string, compileOptions: unknown, queryOptions: unknown}}
+           *  ServerMessage
+           */
+
+          connection.on('message', function(/** @type {string} */ message) {
+            info(`Received Message: ${message}`);
+
+            /** @type {ServerMessage} */
+            const parsed = JSON.parse(message);
+
+            switch (parsed.command) {
+              case "stop": {
+                runtime.schedulePause(function(restarter) {
+                  restarter.break();
+                });
                 tryQueue();
-              });
+                break;
+              }
+              case "shutdown": {
+                runtime.breakAll();
+                info("Exiting due to shutdown request");
+                process.exit(0);
+                break;
+              }
+              case "compile": {
+                runQueue.push({
+                  command: parsed.command,
+                  options: parsed.compileOptions,
+                  respondForPy, respondJSON, closeConn
+                });
+                tryQueue();
+                break;
+              };
+              case "query": {
+                runQueue.push({
+                  command: parsed.command,
+                  query: parsed.query,
+                  compileOptions: parsed.compileOptions,
+                  queryOptions: parsed.queryOptions,
+                  respondForPy, respondJSON, closeConn
+                });
+                tryQueue();
+                break;
+              }
             }
-          }
-
-          
-          info((new Date()) + ' Connection accepted.');
-
-
-          connection.on('message', function(message) {
-            info('Received Message: ' + message);
-
-            var parsed = JSON.parse(message);
-
-            if(parsed.command === "stop") {
-              runtime.schedulePause(function(restarter) {
-                restarter.break(); 
-              });
-              tryQueue();
-            }
-
-            if(parsed.command === "shutdown") {
-              runtime.breakAll();
-              info("Exiting due to shutdown request");
-              process.exit(0);
-            }
-
-            if(parsed.command === "compile") {
-              runQueue.push(parsed.compileOptions);
-              tryQueue();
-            }
-
           });
           connection.on('close', function(reasonCode, description) {
             // info((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
           });
         });
-        
+
         info("Server startup successful");
         if(process.send) {
           process.send({type: 'success'});
@@ -144,4 +201,4 @@
       "make-server": runtime.makeFunction(makeServer, "make-server")
     }, {});
   }
-}
+})

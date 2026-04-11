@@ -45,7 +45,7 @@ fun desugar-toplevel-types(stmts :: List<A.Expr>) -> List<A.Expr> block:
       | s-newtype(l, name, namet) =>
         rev-type-binds := link(A.s-newtype-bind(l, name, namet), rev-type-binds)
       | s-data(l, name, params, mixins, variants, shared, _check-loc, _check) =>
-        namet = names.make-atom(name)
+        namet = names.make-atom(l, name)
         rev-type-binds := link(A.s-newtype-bind(l, A.s-name(l, name), namet), rev-type-binds)
         rev-stmts := link(A.s-data-expr(l, name, namet, params, mixins, variants, shared, _check-loc, _check), rev-stmts)
       | else =>
@@ -263,7 +263,7 @@ fun simplify-let-bind(rebuild, l, bind, expr, lbs :: List<A.LetBind>) -> List<A.
     | s-tuple-bind(lb, fields, as-name) =>
       {bound-expr; binding} = cases(Option) as-name:
         | none =>
-          name = names.make-atom("tup")
+          name = names.make-atom(lb, "tup")
           ann = A.a-tuple(lb, for map(f from fields):
               cases(A.Bind) f:
                 | s-bind(_, _, _, a) => a
@@ -383,7 +383,7 @@ fun desugar-scope-block(stmts :: List<A.Expr>, binding-group :: BindingGroup) ->
               A.s-letrec-bind(v.l, b(v.l, checker-name), get-part(checker-name))
             ]
           end
-          blob-id = names.make-atom(name)
+          blob-id = names.make-atom(l, name)
           data-expr = A.s-data-expr(l, name, namet, params, mixins, variants, shared, _check-loc, _check)
           bind-data = A.s-letrec-bind(l, bn(l, blob-id), data-expr)
           bind-data-pred = A.s-letrec-bind(l, b(l, A.make-checker-name(name)), A.s-dot(l, A.s-id-letrec(l, blob-id, true), name))
@@ -689,7 +689,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
   datatypes = SD.make-mutable-string-dict()
 
   fun make-anon-import-for(l, s, env, shadow bindings, b) block:
-    atom = names.make-atom(s)
+    atom = names.make-atom(l, s)
     bindings.set-now(atom.key(), b(atom))
     { atom: atom, env: env }
   end
@@ -723,17 +723,17 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         #     origin: env.get-value(s)
         #   end
         # end
-        atom = names.make-atom(s)
+        atom = names.make-atom(l, s)
         binding = make-binding(atom)
         bindings.set-now(atom.key(), binding)
         { atom: atom, env: env.set(s, binding) }
       | s-underscore(l) =>
-        atom = names.make-atom("$underscore")
+        atom = names.make-atom(l, "$underscore")
         bindings.set-now(atom.key(), make-binding(atom))
         { atom: atom, env: env }
       # NOTE(joe): an s-atom is pre-resolved to all its uses, so no need to add
       # it or do any more work.
-      | s-atom(_, _) =>
+      | s-atom(_, _, _) =>
         binding = make-binding(name)
         bindings.set-now(name.key(), binding)
         { atom: name, env: env }
@@ -769,13 +769,13 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         | some(shadow val-info) =>
           cases(C.ValueExport) val-info block:
             | v-var(_, t) =>
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(name), A.a-blank)
-              bindings.set-now(names.s-global(name).key(), b)
+              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(A.dummy-loc, name), A.a-blank)
+              bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
               acc.set-now(name, b)
             | else =>
               # TODO(joe): Good place to add _location_ to valueexport to report errs better
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(name), A.a-blank)
-              bindings.set-now(names.s-global(name).key(), b)
+              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(A.dummy-loc, name), A.a-blank)
+              bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
               acc.set-now(name, b)
           end
       end
@@ -788,8 +788,8 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
     for SD.each-key(name from initial.globals.types) block:
       origin = initial.globals.types.get-value(name)
       type-info = initial.type-by-origin-value(origin)
-      b = C.type-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), C.tb-type-let, names.s-type-global(name), C.tb-typ(type-info))
-      type-bindings.set-now(names.s-type-global(name).key(), b)
+      b = C.type-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), C.tb-type-let, names.s-type-global(A.dummy-loc, name), C.tb-typ(type-info))
+      type-bindings.set-now(names.s-type-global(A.dummy-loc, name).key(), b)
       acc.set-now(name, b)
     end
     acc.freeze()
@@ -800,8 +800,8 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
     for SD.each-key(name from initial.globals.modules) block:
       origin = initial.globals.modules.get-value(name)
       mod-info = initial.provides-by-origin-value(origin)
-      b = C.module-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), names.s-module-global(name), mod-info.modules.get-value(name))
-      module-bindings.set-now(names.s-module-global(name).key(), b)
+      b = C.module-bind(C.bo-global(some(origin), origin.uri-of-definition, origin.original-name), names.s-module-global(A.dummy-loc, name), mod-info.modules.get-value(name))
+      module-bindings.set-now(names.s-module-global(A.dummy-loc, name).key(), b)
       acc.set-now(name, b)
     end
     acc.freeze()
@@ -837,9 +837,9 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         if env.has-key(s):
           env.get-value(s).atom
         else:
-          names.s-global(s)
+          names.s-global(l2, s)
         end
-      | s-atom(_, _) => id
+      | s-atom(_, _, _) => id
       | s-underscore(_) => id
       | else => raise("Wasn't expecting a non-s-name in resolve-names id: " + torepr(id))
     end
@@ -855,7 +855,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
             | tb-type-var => A.a-type-var(l, name)
           end
         else:
-          A.a-name(l, names.s-type-global(s))
+          A.a-name(l, names.s-type-global(l, s))
         end
       | else => A.a-name(l, id)
     end
@@ -1054,14 +1054,14 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         new-header = A.s-import(l, file, atom-env-m.atom)
         { imp-e; imp-te; atom-env-m.env; link(new-header, imp-imps) }
       | s-import-fields(l, fields, file) =>
-        synth-include-name = names.make-atom(include-name())
+        synth-include-name = names.make-atom(l, include-name())
         updated = add-import(acc, A.s-import(l, file, synth-include-name))
         add-import(updated, A.s-include-from(l, [list: synth-include-name],
           fields.map(lam(f):
             A.s-include-name(l, A.s-module-ref(l, [list: f], none))
           end)))
       | s-include(l, file) =>
-        synth-include-name = names.make-atom(include-name())
+        synth-include-name = names.make-atom(l, include-name())
         updated = add-import(acc, A.s-import(l, file, synth-include-name))
         add-import(updated, A.s-include-from(l, [list: synth-include-name],
           [list:
@@ -1702,7 +1702,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
               when self.type-env.has-key(s) block:
                 name-errors := link(C.type-id-used-as-value(id, self.type-env.get-value(s).origin), name-errors)
               end
-              A.s-id(l2, names.s-global(s))
+              A.s-id(l2, names.s-global(l2, s))
             | some(vb) =>
               cases (C.ValueBinder) vb.binder:
                 | vb-let => A.s-id(l2, vb.atom)
@@ -1710,7 +1710,7 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
                 | vb-var => A.s-id-var(l2, vb.atom)
               end
           end
-        | s-atom(_, _) => A.s-id(l, id)
+        | s-atom(_, _, _) => A.s-id(l, id)
         | s-underscore(_) => A.s-id(l, id)
         | else => raise("Wasn't expecting a non-s-name in resolve-names id: " + torepr(id))
       end

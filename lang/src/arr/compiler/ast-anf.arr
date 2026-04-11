@@ -781,8 +781,8 @@ fun freevars-e(expr :: AExpr) -> FrozenNameDict<A.Name>:
 where:
   d = dummy-loc
   n = A.global-names.make-atom
-  x = n("x")
-  y = n("y")
+  x = n(d, "x")
+  y = n(d, "y")
   freevars-e(
       a-let(d, a-bind(d, x, A.a-blank), a-val(d, a-num(d, 4)),
         a-lettable(d, a-val(d, a-id(d, y))))).keys-list() is [list: y.key()]
