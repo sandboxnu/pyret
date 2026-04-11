@@ -102,14 +102,11 @@
   @pyret{l}.  This is simply the sum of all the values in the list, divided by
   its length.
   
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
+  @examples{
     check:
-      S.mean([L.list: ]) raises "Empty List"
-      S.mean([L.list: 1]) is 1
-      S.mean([L.list: 2, 2, 4.5, 1.5, 1, 1]) is 2
+      mean([list: ]) raises "Empty List"
+      mean([list: 1]) is 1
+      mean([list: 2, 2, 4.5, 1.5, 1, 1]) is 2
     end
   }
   }
@@ -123,14 +120,11 @@
   ``middle-most'' value in the list, if the values were sorted.  If the list is of even
   length, returns the average of the two middle-most values.
   
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
+  @examples{
     check:
-      S.median([L.list: ]) raises "Empty List"
-      S.median([L.list: 2]) is 2
-      S.median([L.list: -1, 0, 1, 2, 5]) is 1
+      median([list: ]) raises "Empty List"
+      median([list: 2]) is 2
+      median([list: -1, 0, 1, 2, 5]) is 1
     end
   }
   }
@@ -153,17 +147,14 @@ assert that when no element appears more than once, no element should be
 considered a mode. To avoid confusing high-school students, we adopt the
 definition they will find in their textbooks.
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
-    check:
-      S.modes([L.list: ]) is [L.list: ]
-      S.modes([L.list: 1, 2, 3, 4]) is [L.list: ]
-      S.modes([L.list: 1, 2, 3, 1, 4]) is [L.list: 1]
-      S.modes([L.list: 1, 2, 1, 2, 2, 1]) is [L.list: 1, 2]
-      S.modes([L.list: 1, 2, 2, 1, 2, 1]) is [L.list: 1, 2]
-    end
+  @examples{
+  check:
+    modes([list: ]) is [list: ]
+    modes([list: 1, 2, 3, 4]) is [list: ]
+    modes([list: 1, 2, 3, 1, 4]) is [list: 1]
+    modes([list: 1, 2, 1, 2, 2, 1]) is [list: 1, 2]
+    modes([list: 1, 2, 2, 1, 2, 1]) is [list: 1, 2]
+  end
   }
   }
 
@@ -174,16 +165,13 @@ definition they will find in their textbooks.
     ]{
     Determines if a list of numbers has any modes, i.e., any repeated values.
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
-    check:
-      S.has-mode([L.list: ]) is false
-      S.has-mode([L.list: 1, 2, 3, 4]) is false
-      S.has-mode([L.list: 1, 2, 2, 1, 2, 2]) is true
-      S.has-mode([L.list: 1, 2, 3, 2]) is true
-    end
+  @examples{
+  check:
+    has-mode([list: ]) is false
+    has-mode([list: 1, 2, 3, 4]) is false
+    has-mode([list: 1, 2, 2, 1, 2, 2]) is true
+    has-mode([list: 1, 2, 3, 2]) is true
+  end
   }
   }
 
@@ -194,17 +182,14 @@ definition they will find in their textbooks.
     ]{
     Returns the smallest mode of a list of numbers, if any is present.
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
-    check:
-      S.mode-smallest([L.list: ]) raises "empty" 
-      S.mode-smallest([L.list: 1]) raises "no duplicate values"
-      S.mode-smallest([L.list: 1, 2, 3, 4, 5]) raises "no duplicate values"
-      S.mode-smallest([L.list: 1, 1, 2]) is 1
-      S.mode-smallest([L.list: 1, 2, 1, 2]) is 1
-    end
+  @examples{
+  check:
+    mode-smallest([list: ]) raises "empty" 
+    mode-smallest([list: 1]) raises "no duplicate values"
+    mode-smallest([list: 1, 2, 3, 4, 5]) raises "no duplicate values"
+    mode-smallest([list: 1, 1, 2]) is 1
+    mode-smallest([list: 1, 2, 1, 2]) is 1
+  end
   }
   }
 
@@ -215,17 +200,14 @@ definition they will find in their textbooks.
     ]{
     Returns the largest mode of a list of numbers, if any is present.
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
-    check:
-      S.mode-largest([L.list: ]) raises "empty" 
-      S.mode-largest([L.list: 1]) raises "no duplicate values"
-      S.mode-largest([L.list: 1, 2, 3, 4, 5]) raises "no duplicate values"
-      S.mode-largest([L.list: 1, 1, 2]) is 1
-      S.mode-largest([L.list: 1, 2, 1, 2]) is 2
-    end
+  @examples{
+  check:
+    mode-smallest([list: ]) raises "empty" 
+    mode-smallest([list: 1]) raises "no duplicate values"
+    mode-smallest([list: 1, 2, 3, 4, 5]) raises "no duplicate values"
+    mode-smallest([list: 1, 1, 2]) is 1
+    mode-smallest([list: 1, 2, 1, 2]) is 2
+  end
   }
   }
 
@@ -236,17 +218,14 @@ definition they will find in their textbooks.
     ]{
     Returns an arbitrary mode of a list of numbers, if any is present.
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
-    check:
-      S.mode-any([L.list: ]) raises "empty" 
-      S.mode-any([L.list: 1]) raises "no duplicate values"
-      S.mode-any([L.list: 1, 2, 3, 4, 5]) raises "no duplicate values"
-      S.mode-any([L.list: 1, 1, 2]) is 1
-      S.mode-any([L.list: 1, 2, 1, 2]) satisfies lam(m): (m == 1) or (m == 2) end
-    end
+  @examples{
+  check:
+    mode-any([list: ]) raises "empty" 
+    mode-any([list: 1]) raises "no duplicate values"
+    mode-any([list: 1, 2, 3, 4, 5]) raises "no duplicate values"
+    mode-any([list: 1, 1, 2]) is 1
+    mode-any([list: 1, 2, 1, 2]) satisfies lam(m): (m == 1) or (m == 2) end
+  end
   }
   }
 
@@ -258,14 +237,11 @@ definition they will find in their textbooks.
   Gives the @emph{population} or @emph{uncorrected sample} standard deviation
   of the data set represented by numbers in @pyret{l}.
   
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
+  @examples{
     check:  
-      S.stdev([L.list: ]) raises "list is empty"
-      S.stdev([L.list: 2]) is 0
-      S.stdev([L.list: 2, 4, 4, 4, 5, 5, 7, 9]) is 2
+      stdev([list: ]) raises "list is empty"
+      stdev([list: 2]) is 0
+      stdev([list: 2, 4, 4, 4, 5, 5, 7, 9]) is 2
     end 
   }
   }
@@ -278,14 +254,11 @@ definition they will find in their textbooks.
   Gives the @emph{corrected sample} standard deviation of the data set represented by
   numbers in @pyret{l}.
   
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
+  @examples{
     check:  
-      S.stdev-sample([L.list: ]) raises "list is empty"
-      S.stdev-sample([L.list: 2]) raises "division by zero"
-      S.stdev-sample([L.list: 2, 4, 4, 4, 5, 5, 7, 9]) is-roughly 2.1380899
+      stdev-sample([list: ]) raises "list is empty"
+      stdev-sample([list: 2]) raises "division by zero"
+      stdev-sample([list: 2, 4, 4, 4, 5, 5, 7, 9]) is-roughly 2.1380899
     end 
   }
   }
@@ -303,12 +276,9 @@ definition they will find in their textbooks.
   variable relationship, using ordinary least squares regression.  Its result
   is a @emph{predictor function} to predict a y-value given an x-value.
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
+  @examples{
     check:
-      predictor = S.linear-regression([L.list: 0, 1, 2, 3], [L.list: 3, 2, 1, 0])
+      predictor = linear-regression([list: 0, 1, 2, 3], [list: 3, 2, 1, 0])
       predictor(1) is-roughly 2
       predictor(1.5) is-roughly 1.5
       predictor(1000) is-roughly -997
@@ -325,22 +295,19 @@ definition they will find in their textbooks.
   measures how well the predictor function (from @link{linear-regression})
   matches the given actual function (the argument @pyret{f}).
 
-  @examples[#:show-try-it #t]{
-    import statistics as S
-    import lists as L
-
+  @examples{
     PI = ~3.1415926535
 
     fun f-good(x): 3 - x end
     fun f-poor(x): 3 * num-cos((x * PI) / 6) end
     fun f-bad(x): 3 end
 
-    xs = [L.list: 0, 1, 2, 3]
-    ys = [L.list: 3, 2, 1, 0]
+    xs = [list: 0, 1, 2, 3]
+    ys = [list: 3, 2, 1, 0]
     check:
-      S.r-squared(xs, ys, f-good) is-roughly 1
-      S.r-squared(xs, ys, f-poor) is-roughly 0.87846096
-      S.r-squared(xs, ys, f-bad)  is-roughly -1.8
+      r-squared(xs, ys, f-good) is-roughly 1
+      r-squared(xs, ys, f-poor) is-roughly 0.87846096
+      r-squared(xs, ys, f-bad)  is-roughly -1.8
     end
   }
 }
