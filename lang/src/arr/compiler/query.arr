@@ -1,11 +1,13 @@
 provide *
 
-# NOTE: New LSP/queries go here as functions that take the cache-manager and 
-# query parameters, then return results. The cache-manager has surface-ast, 
+# NOTE: New LSP/queries go here as functions that take the cache-manager and
+# query parameters, then return results. The cache-manager has surface-ast,
 # named-result, and loadable for every compiled module.
 
 import either as E
 import srcloc as S
+import error-display as ED
+import render-error-display as RED
 import file("ast-util.arr") as AU
 import file("compile-structs.arr") as CS
 
@@ -30,5 +32,64 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
               end
           end
       end
+  end
+end
+
+fun first-srcloc(ed :: ED.ErrorDisplay) -> Option<S.Srcloc>:
+  doc: "Walk an ErrorDisplay tree and return the first concrete srcloc found."
+  cases(ED.ErrorDisplay) ed:
+    | loc(l) =>
+      if S.is-srcloc(l): some(l) else: none end
+    | cmcode(l) =>
+      if S.is-srcloc(l): some(l) else: none end
+    | highlight(contents, locs, _) =>
+      srclocs = locs.filter(S.is-srcloc)
+      if is-link(srclocs): some(srclocs.first)
+      else: first-srcloc(contents)
+      end
+    | loc-display(l, _, contents) =>
+      if S.is-srcloc(l): some(l)
+      else: first-srcloc(contents)
+      end
+    | paragraph(contents) => first-srcloc-list(contents)
+    | v-sequence(contents) => first-srcloc-list(contents)
+    | bulleted-sequence(contents) => first-srcloc-list(contents)
+    | h-sequence(contents, _) => first-srcloc-list(contents)
+    | h-sequence-sep(contents, _, _) => first-srcloc-list(contents)
+    | code(contents) => first-srcloc(contents)
+    | optional(contents) => first-srcloc(contents)
+    | text(_) => none
+    | embed(_) => none
+    | maybe-stack-loc(_, _, _, _) => none
+  end
+end
+
+fun first-srcloc-list(eds :: List<ED.ErrorDisplay>) -> Option<S.Srcloc>:
+  cases(List) eds:
+    | empty => none
+    | link(first, rest) =>
+      cases(Option) first-srcloc(first):
+        | some(l) => some(l)
+        | none => first-srcloc-list(rest)
+      end
+  end
+end
+
+fun get-diagnostics(compiled) -> List<{String; Option<S.Srcloc>}>:
+  doc: "Extract compile errors from a CompiledProgram as {message; maybe-loc} pairs."
+  error-loadables = compiled.loadables.filter(lam(cr):
+    CS.is-module-as-string(cr) and CS.is-err(cr.result-printer)
+  end)
+  for fold(diagnostics from empty, loadable from error-loadables):
+    cases(CS.CompileResult) loadable.result-printer:
+      | err(problems) =>
+        for fold(acc from diagnostics, problem from problems):
+          rendered = problem.render-reason()
+          msg = RED.display-to-string(rendered, tostring, empty)
+          maybe-loc = first-srcloc(rendered)
+          link({msg; maybe-loc}, acc)
+        end
+      | ok(_) => diagnostics
+    end
   end
 end

@@ -631,8 +631,8 @@ fun compile-for-query(options, program) block:
   # starter-modules = CL.modules-from-worklist(wl,
   #   lam(l, _): cache-manager.get-loadable("", empty, l, [SD.string-dict:]) end)
   starter-modules = CL.modules-from-worklist(wl, options.cache-manager.get-loadable(options.compiled-cache, options.compiled-read-only.map(Filesystem.resolve), _, _))
-  CL.compile-program-with(wl, starter-modules, options)
-  base.locator.uri()
+  compiled = CL.compile-program-with(wl, starter-modules, options)
+  {base.locator.uri(); compiled}
 end
 
 fun build-program(path, options, stats) block:
