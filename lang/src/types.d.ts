@@ -224,7 +224,7 @@ declare namespace ABI {
   type __ErrorExt = {
     pyretStack?: string[];
     exn?: val;
-  }
+  } & PyretObject;
 
   class FailureResult {
     exn: Error & __ErrorExt;
