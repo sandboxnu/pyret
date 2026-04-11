@@ -350,7 +350,7 @@ ul.glossary {
 .container {
   width: 100%;
   min-width: 0;
-  padding: 24px 0 0 24px;
+  padding: 24px 24px 0 24px;
   box-sizing: border-box;
 }
 
@@ -485,4 +485,328 @@ h4 {
   font-style: normal;
   font-weight: 400;
   line-height: 150%;
+}
+
+/* Landing page layout */
+
+.landing-page {
+  background-color: #F8F9FA;
+}
+
+.landing-page .sidebar {
+  display: none;
+}
+
+.landing-page .searchform {
+  display: none;
+}
+
+.landing-page .container {
+  max-width: 962px;
+  margin: 0 auto;
+  padding: 24px 48px 24px;
+}
+
+.landing-page .container > hr,
+.landing-page .container > .floatleft,
+.landing-page .container > .floatright,
+.landing-page .container h1[id="Pyret"] {
+  display: none;
+}
+
+/* Landing page components */
+
+.landing-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-self: stretch;
+}
+
+.landing-h1 {
+  font-family: Roboto, sans-serif;
+  font-weight: 400;
+  font-size: 40px;
+  line-height: 1.2;
+  color: #000;
+  margin: 0;
+  margin-left: 0;
+}
+
+.landing-h1::before {
+  content: none !important;
+}
+
+.landing-description {
+  font-family: Roboto, sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #000;
+  max-width: 834px;
+}
+
+.landing-description p {
+  margin: 0 0 1em 0;
+}
+
+.landing-description p:last-child {
+  margin-bottom: 0;
+}
+
+.landing-searchbar {
+  align-self: stretch;
+}
+
+.landing-searchbar-inner {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #D8D8D8;
+  border-radius: 4px;
+}
+
+.landing-searchbar-inner:focus-within {
+  border-color: #A1CDFF;
+  box-shadow: 0px 0px 0px 4px rgba(13, 110, 253, 0.25);
+}
+
+.landing-searchbox {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: Roboto, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #333;
+  padding: 0;
+}
+
+.landing-searchbox::placeholder {
+  color: #999;
+}
+
+.landing-btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  background-color: var(--primary-50);
+  color: #fff;
+  border-radius: 4px;
+  text-decoration: none;
+  font-family: Roboto, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  align-self: flex-start;
+}
+
+.landing-btn:hover {
+  background-color: #2567ad;
+  color: #fff;
+}
+
+.landing-releases {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.landing-releases-heading {
+  font-family: Roboto, sans-serif;
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1.2;
+  color: #000;
+  margin: 0;
+}
+
+.landing-releases-heading::before {
+  content: none !important;
+}
+
+.landing-release-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.landing-release-links a {
+  font-family: Inter, sans-serif;
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--primary-50);
+  text-decoration: none;
+}
+
+.landing-release-links a:hover {
+  text-decoration: underline;
+}
+
+/* Mobile topbar & hamburger (hidden on desktop) */
+
+.mobile-topbar {
+  display: none;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+.sidebar-close-btn {
+  display: none;
+}
+
+/* Mobile layout */
+
+@media (max-width: 768px) {
+  /* Topbar: hide logo & links, show hamburger + title */
+  .topbar {
+    height: auto;
+    padding: 12px 24px;
+  }
+
+  .topbar-logo {
+    display: none;
+  }
+
+  .topbar-links {
+    display: none;
+  }
+
+  .searchform {
+    display: none;
+  }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+  }
+
+  .hamburger-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    color: #232323;
+  }
+
+  .hamburger-btn .material-symbols-rounded {
+    font-size: 24px;
+  }
+
+  .mobile-logo {
+    height: 32px;
+    width: auto;
+  }
+
+  /* Sidebar: off-screen drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    z-index: 200;
+    height: 100vh;
+    transition: left 0.25s ease;
+  }
+
+  .sidebar.sidebar-open {
+    left: 0;
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    color: #666;
+    align-self: flex-end;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 150;
+  }
+
+  .sidebar-overlay.active {
+    display: block;
+  }
+
+  body.sidebar-drawer-open {
+    overflow: hidden;
+  }
+
+  /* Landing page mobile */
+  .landing-page .container {
+    padding: 32px 24px 16px;
+  }
+
+  .landing-hero {
+    gap: 16px;
+  }
+
+  .landing-h1 {
+    font-size: 20px;
+  }
+
+  .landing-description {
+    font-size: 14px;
+  }
+
+  .landing-searchbar-inner {
+    padding: 8px;
+  }
+
+  .landing-searchbox {
+    font-size: 14px;
+  }
+
+  .landing-btn {
+    font-size: 14px;
+    padding: 8px 20px;
+  }
+
+  .landing-releases {
+    margin-top: 16px;
+    gap: 16px;
+  }
+
+  .landing-releases-heading {
+    font-size: 20px;
+  }
+
+  .landing-release-links a {
+    font-size: 14px;
+  }
+
+  .landing-release-links {
+    gap: 8px;
+  }
 }

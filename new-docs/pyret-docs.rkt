@@ -430,3 +430,33 @@
 
 (define (rbrace)
   `(span () "}"))
+
+;; Landing page components
+
+(define (landing-hero . elems)
+  `(div ([class "landing-hero"]) ,@elems))
+
+(define (landing-description . elems)
+  `(div ([class "landing-description"]) ,@elems))
+
+(define (landing-searchbar)
+  `(div ([class "landing-searchbar"])
+     (div ([class "landing-searchbar-inner"])
+       (span ([class "material-symbols-rounded search-icon"]) "search")
+       (input ([class "landing-searchbox"]
+               [id "landing-searchbox"]
+               [type "text"]
+               [tabindex "1"]
+               [placeholder "Search..."]
+               [title "Enter a search string to search the manuals"]
+               [onkeypress "return DoSearchKey(event, this, '9.1', '');"])))))
+
+(define (landing-btn url . elems)
+  `(div ([class "landing-btn-wrapper"])
+     (a ([class "landing-btn"] [href ,url]) ,@elems)))
+
+(define (landing-releases . elems)
+  `(div ([class "landing-releases"]) ,@elems))
+
+(define (landing-release-links . elems)
+  `(div ([class "landing-release-links"]) ,@elems))
