@@ -1363,7 +1363,8 @@ fun canonicalize-value-export(ve :: CS.ValueExport, uri :: URI, tn):
     | v-alias(o, n) => CS.v-alias(o, n)
     | v-just-type(o, t) => CS.v-just-type(o, canonicalize-names(t, uri, tn))
     | v-var(o, t) => CS.v-var(o, canonicalize-names(t, uri, tn))
-    | v-fun(o, t, name, flatness) => CS.v-fun(o, canonicalize-names(t, uri, tn), name, flatness)
+    | v-fun(o, t, name, doc, flatness) => 
+      CS.v-fun(o, canonicalize-names(t, uri, tn), name, doc, flatness)
   end
 end
 
@@ -1544,5 +1545,57 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
               data-provides)
           provs
       end
+  end
+end
+
+fun get-fun-hover-info(expr :: A.Expr, visitor) -> {String; A.Ann}:
+  # empty string sounds bad but we already are parsing missing docstrings
+  # into the empty string, so we have to detect and elide anyways...
+  # similarly, we detect and elide empty annotations,
+  # so that is a fine default too.
+  doc: ```
+       Extracts the docstring if one exists; empty string otherwise.
+       Turns annotations on function-like expressions into arrow annotation;
+       empty annotation otherwise.
+       Assumes all tuple annotations have been desugared.
+       ```
+
+  fun piece-into-arrow(params :: List<A.Bind>, ret :: A.Ann) -> A.Ann:
+    a-field-params = for map(p from params):
+      # s-tuple-binds should be gone by now
+      A.a-field(p.l, p.id.tosourcestring(), p.ann)
+    end
+    A.a-arrow-argnames(A.dummy-loc, a-field-params, ret, false)
+  end
+
+  # we have to visit the resulting arrow ann to resolve names.
+  # while doing so, names bound as type parameters in the expr need to be dealt with
+  # (otherwise they would be unbound).
+  # The proper thing to do would be to use `a-forall`, which doesn't exist,
+  # so we use `a-any` as a last resort (at the cost of worse hovering).
+  fun tparam-visitor(tparams :: List<A.Name>):
+    tparam-names = tparams.map(_.toname())
+    visitor.{
+      method a-name(self, l, id):
+        if A.is-s-name(id) and tparam-names.member(id.s):
+          # TODO: fix this!
+          A.a-any(l)
+        else:
+          visitor.a-name(l, id)
+        end
+      end
+    }
+  end
+
+  cases(A.Expr) expr:
+    | s-lam(_, _, tparams, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | s-fun(_, _, tparams, _, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | s-method(_, _, tparams, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | s-method-field(_, _, tparams, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | else => {""; A.a-blank}
   end
 end

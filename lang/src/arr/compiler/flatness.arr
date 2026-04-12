@@ -349,7 +349,7 @@ fun get-flatness-for-module-fun(id, field, mb, env) -> Flatness:
     | none => none
     | some(value-export) =>
       cases(C.ValueExport) value-export:
-        | v-fun(_, _, _, flatness) =>
+        | v-fun(_, _, _, _, flatness) =>
           flatness
         | else => none
       end
@@ -452,7 +452,7 @@ fun make-prog-flatness-env(anfed :: AA.AProg, post-env :: C.ComputedEnvironment,
           | none => nothing
           | some(ve) =>
             cases(C.ValueExport) ve:
-              | v-fun(_, _, _, flatness) => sd.set-now(vb.atom.key(), flatness)
+              | v-fun(_, _, _, _, flatness) => sd.set-now(vb.atom.key(), flatness)
               | else => nothing
             end
         end
@@ -462,7 +462,7 @@ fun make-prog-flatness-env(anfed :: AA.AProg, post-env :: C.ComputedEnvironment,
             raise("The name: " + vb.atom.toname() + " could not be found on the module " + vb.origin.uri-of-definition)
           | some(value-export) =>
             cases(C.ValueExport) value-export:
-              | v-fun(_, _, _, flatness) =>
+              | v-fun(_, _, _, _, flatness) =>
                 sd.set-now(k, flatness)
               | else =>
                 nothing
@@ -568,10 +568,16 @@ fun get-flat-provides(provides, env, post-env, { flatness-env; _ }, ast) block:
               | v-alias(origin, name) => env.value-by-uri-value(origin.uri-of-definition, origin.original-name.toname())
               | else => ve
             end
+            existing-doc = cases(C.ValueExport) existing-val:
+              | v-fun(_, _, _, doc, _) => doc
+              | else => ""
+            end
             cases(Option) maybe-flatness:
               | none => ve
               | some(flatness-result) =>
-                C.v-fun(ve.origin, existing-val.t, k, flatness-result)
+                # only fall back to the existing doc if we have to
+                doc = if bind.doc == "": existing-doc else: bind.doc end
+                C.v-fun(ve.origin, existing-val.t, k, doc, flatness-result)
             end
         end
         s.set(k, new-val)
