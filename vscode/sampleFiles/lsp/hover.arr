@@ -10,6 +10,13 @@ end
 
 not-zero
 
+fun doc-no-ann(asd):
+  doc: "hi mom"
+  asd
+end
+
+doc-no-ann
+
 div-refine :: Number, Number%(not-zero) -> Number
 fun div-refine(num, den):
   doc: "divides the things"

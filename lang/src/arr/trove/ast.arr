@@ -1055,6 +1055,7 @@ data Expr:
     method tosource(self): PP.str("!") + self.id.tosource() end
   | s-id-letrec(l :: Loc, id :: Name, safe :: Boolean) with:
     method label(self): "s-id-letrec" end,
+    # This is not actually to-source! There is a difference between tosource and pretty-print
     method tosource(self): PP.str("~") + self.id.tosource() end
   | s-id-var-modref(l :: Loc, id :: Name, uri :: String, name :: String) with:
     method label(self): "s-id-var-modref" end,
