@@ -1,4 +1,3 @@
-/** @satisfies {PyretModule} */
 ({
     requires: [],
     nativeRequires: [
@@ -42,10 +41,8 @@
             // bound the transformed y-value in case y = 0
             const lowerBound = -1e12;
             const ysLog = ys.map(y => Math.max(lowerBound, Math.log(Math.abs(y))));
-            return defaultLoss(xs, (/** @type {[number, number]} */ (ysLog)));
+            return defaultLoss(xs, ysLog);
         }
-
-        /** @typedef {{x: number[], y: number[]}} Foo */
 
         /**
          * Flow:
@@ -54,44 +51,35 @@
          * 3. Identify interval with max loss
          * 4. Split interval in half
          * 5. Repeat steps 2-4 until stopping condition
+         * @param {Function} func - function to plot
+         * @param {number} xMinValue - min x-value
+         * @param {number} xMaxValue - max x-value
+         * @param {Function} lossFunction - loss function
+         * @param {number} numSamples - max number of data points to sample
          */
-        class AdaptiveSampler {
-            /**
-             * @param {PyretFunction} func - function to plot
-             * @param {number} xMinValue - min x-value
-             * @param {number} xMaxValue - max x-value
-             * @param {Function} lossFunction - loss function
-             * @param {number} numSamples - max number of data points to sample
-             */
-            constructor(func, xMinValue, xMaxValue, lossFunction, numSamples) {
-                // format: [[x1, x2, loss]]
-                this.lossManager = (/** @type {[number, number, number][]} */ ([]));
-                // format: {x1: y1, x2: y2, ...}
-                this.data = new Map();
-                this.func = func;
-                this.xMinValue = xMinValue;
-                this.xMaxValue = xMaxValue;
-                this.lossFunction = lossFunction;
-                this.numSamples = numSamples;
-                this.pending = (/** @type {[number, number][]} */ ([]));
-            }
+        function AdaptiveSampler(func, xMinValue, xMaxValue, lossFunction, numSamples) {
+            // format: [[x1, x2, loss]]
+            this.lossManager = [];
+            // format: {x1: y1, x2: y2, ...}
+            this.data = new Map();
+            this.func = func;
+            this.xMinValue = xMinValue;
+            this.xMaxValue = xMaxValue;
+            this.lossFunction = lossFunction;
+            this.numSamples = numSamples;
+            this.pending = [];
+
             // runs the function more safely (handles zero division and Pyret nums)
-            // FIX: janky error handling
-            /**
-             * @param {Number} input
-             * @returns {Foo}
-             */
-            runFunc(input, offset = 1e-6) {
-                let x = input;
+            // FIX: janky recursive calls
+            this.runFunc = function(x, offset=1e-6) {
                 return RUNTIME.safeCall(
                     () => RUNTIME.execThunk(RUNTIME.makeFunction(() => this.func.app(x))),
-                    (result) => {
-                        if (result.$name === "left") {
-                            const output = RUNTIME.getField(result, "v");
-                            const y = typeof output == "number" ? output : jsnums.toFixnum(output);
-                            return { "x": [x], "y": [y] };
-                        } else {
-                            // Error (e.g. division by zero) - evaluate at nearby points
+                    (result) => cases(RUNTIME.ffi.isEither, "Either", result, {
+                        left: (value) => {
+                            const y = typeof value === 'number' ? value : jsnums.toFixnum(value);
+                            return {"x": [x], "y": [y]};
+                        },
+                        right: () => {
                             const x1 = x - offset;
                             const x2 = x + offset;
                             return RUNTIME.safeCall(
@@ -99,39 +87,38 @@
                                 (r1) => RUNTIME.safeCall(
                                     () => this.runFunc(x2),
                                     (r2) => ({"x": [x1, x2], "y": [r1.y[0], r2.y[0]]}),
-                                    "runFunc-offset-2"
+                                    "runFunc"
                                 ),
-                                "runFunc-offset-1"
+                                "runFunc"
                             );
                         }
-                    },
+                    }),
                     "runFunc"
-                );
+                )
             };
 
             // initialize data by computing f(x) for endpoints
-            initData() {
+            this.initData = function() {
                 return RUNTIME.safeCall(
-                    () => this.runFunc(this.xMinValue),
+                    () => this.runFunc(xMinValue),
                     (lower) => RUNTIME.safeCall(
-                        () => this.runFunc(this.xMaxValue),
+                        () => this.runFunc(xMaxValue),
                         (upper) => {
                             lower.x.forEach((xi, i) => this.data.set(xi, lower.y[i]));
                             upper.x.forEach((xi, i) => this.data.set(xi, upper.y[i]));
                             // adds lower x1 and upper x2 (outer bounds) if there is more than one x returned
-                            this.pending.push([lower.x[0], (/** @type {number} */ (upper.x.at(-1)))]);
-                        },
-                        "initData-upper"
+                            this.pending.push([lower.x[0], upper.x.at(-1)]);
+                        }
                     ),
-                    "initData-lower"
-                );
+                    "initData"
+                )
             };
 
             // compute loss for each interval in pending
             // FIX: janky error handling
-            computeLosses() {
+            this.computeLosses = function() {
                 while (this.pending.length > 0) {
-                    const xs = /** @type {[number, number]} */ (this.pending.pop());
+                    const xs = this.pending.pop();
                     const ys = [this.data.get(xs[0]), this.data.get(xs[1])];
                     if (ys.includes(undefined)) continue;
                     const loss = this.lossFunction(xs, ys);
@@ -141,7 +128,7 @@
 
             // get the interval with the max loss
             // TODO: handling multiple intervals with the same max loss (particularly important for uniform loss)
-            getMaxLoss() {
+            this.getMaxLoss = function() {
                 let maxLoss = -Infinity;
                 let maxInterval = null;
                 let maxIndex = null;
@@ -158,11 +145,7 @@
             };
 
             // split an interval in half, compute y-value of the midpoint, and add new intervals to pending
-            /**
-             * @param {number[]} maxInterval 
-             * @param {number} maxIndex 
-             */
-            splitInterval(maxInterval, maxIndex) {
+            this.splitInterval = function(maxInterval, maxIndex) {
                 const [l, r] = maxInterval;
                 const m = (l + r) / 2;
                 return RUNTIME.safeCall(
@@ -170,46 +153,33 @@
                     (coord) => {
                         coord.x.forEach((xi, i) => this.data.set(xi, coord.y[i]));
                         this.lossManager.splice(maxIndex, 1);
-                        this.pending.push([l, coord.x[0]], [/** @type {number} */ (coord.x.at(-1)), r]);
+                        this.pending.push([l, coord.x[0]], [coord.x.at(-1), r]);
                     },
-                    "splitInterval"
+                    "splitInterval" 
                 );
             };
 
             // runs the adaptive sampler
             // TODO: adding different stopping conditions (e.g. error threshold)
-            runner() {
-                const iterate = () => {
-                    if (this.data.size >= this.numSamples) {
-                        return RUNTIME.nothing;
-                    }
-                    const { maxInterval, maxIndex } = this.getMaxLoss();
-                    return RUNTIME.safeCall(
-                        () => this.splitInterval(maxInterval, maxIndex),
-                        () => {
-                            this.computeLosses();
-                            return iterate();
-                        },
-                        "runner-iterate"
-                    );
-                };
-                return RUNTIME.safeCall(
-                    () => this.initData(),
-                    () => {
-                        this.computeLosses();
-                        return iterate();
-                    },
-                    "runner-init"
-                );
+            this.runner = function() {
+                this.initData();
+                this.computeLosses();
+                while (this.data.size < numSamples) {
+                    console.log(this)
+                    const maxLoss = this.getMaxLoss();
+                    this.splitInterval(maxLoss.maxInterval, maxLoss.maxIndex);
+                    this.computeLosses();
+                }
             };
-
         }
-    
-    return RUNTIME.makeModuleReturn({}, {}, {
+
+    var internal = {
         defaultLoss: defaultLoss,
         uniformLoss: uniformLoss,
         absLogLoss: absLogLoss,
         AdaptiveSampler: AdaptiveSampler
-    });
+    };
+    
+    return RUNTIME.makeModuleReturn({}, {}, internal);
     }
 })
