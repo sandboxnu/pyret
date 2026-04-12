@@ -2179,12 +2179,13 @@ fun compile-provides(provides):
               j-field("origin", compile-origin(origin)),
               j-field("typ", compile-provided-type(t))
             ]))
-          | v-fun(origin, t, name, flatness) =>
+          | v-fun(origin, t, name, doc, flatness) =>
             j-field(v, j-obj([clist:
               j-field("bind", j-str("fun")),
               j-field("origin", compile-origin(origin)),
               j-field("flatness", flatness.and-then(j-num).or-else(j-false)),
               j-field("name", j-str(name)),
+              j-field("doc", j-str(doc)),
               j-field("typ", compile-provided-type(t))
             ]))
         end

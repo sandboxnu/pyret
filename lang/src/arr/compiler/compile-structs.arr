@@ -407,7 +407,7 @@ data ValueExport:
   | v-alias(origin :: BindOrigin, original-name :: String)
   | v-just-type(origin :: BindOrigin, t :: T.Type)
   | v-var(origin :: BindOrigin, t :: T.Type)
-  | v-fun(origin :: BindOrigin, t :: T.Type, name :: String, flatness :: Option<Number>)
+  | v-fun(origin :: BindOrigin, t :: T.Type, name :: String, doc :: String, flatness :: Option<Number>)
 end
 
 data DataExport:
@@ -439,7 +439,8 @@ fun value-export-from-raw(uri, val-export, tyvar-env :: SD.StringDict<T.Type>) -
   t = val-export.tag
   typ = type-from-raw(uri, val-export.typ, tyvar-env)
   if t == "v-fun":
-    v-fun(typ, t, none)
+    # TODO (ZACK): WTF is up with this?
+    v-fun(typ, t, none, none)
   else:
     v-just-type(typ)
   end
@@ -589,7 +590,7 @@ fun provides-from-raw-provides(uri, raw):
         else:
           none
         end
-        vdict.set(v.name, v-fun(origin, type-from-raw(uri, v.value.typ, SD.make-string-dict()), v.value.name, flatness))
+        vdict.set(v.name, v-fun(origin, type-from-raw(uri, v.value.typ, SD.make-string-dict()), v.value.name, v.value.doc, flatness))
       else:
         origin = origin-from-raw(uri, v.value.origin, v.name)
         vdict.set(v.name, v-just-type(origin, type-from-raw(uri, v.value.typ, SD.make-string-dict())))

@@ -1363,7 +1363,8 @@ fun canonicalize-value-export(ve :: CS.ValueExport, uri :: URI, tn):
     | v-alias(o, n) => CS.v-alias(o, n)
     | v-just-type(o, t) => CS.v-just-type(o, canonicalize-names(t, uri, tn))
     | v-var(o, t) => CS.v-var(o, canonicalize-names(t, uri, tn))
-    | v-fun(o, t, name, flatness) => CS.v-fun(o, canonicalize-names(t, uri, tn), name, flatness)
+    | v-fun(o, t, name, doc, flatness) => 
+      CS.v-fun(o, canonicalize-names(t, uri, tn), name, doc, flatness)
   end
 end
 

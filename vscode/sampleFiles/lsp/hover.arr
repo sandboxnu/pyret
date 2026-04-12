@@ -44,3 +44,6 @@ fun generic<a>(l :: List<a>) -> List<a>:
 end
 
 generic
+
+map
+

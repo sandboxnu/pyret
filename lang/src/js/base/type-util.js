@@ -157,6 +157,7 @@ define("pyret-base/js/type-util", [], function() {
           origin: origin,
           bind: "fun",
           name: value.name || "",
+          doc: value.doc || "",
           flatness: flatness,
           typ: toPyretType(runtime, expandType(value.typ, shorthands))
         });
@@ -287,6 +288,7 @@ define("pyret-base/js/type-util", [], function() {
         origin: typ.origin,
         flatness: typ.flatness,
         name: typ.name,
+        doc: typ.doc || "",
         typ: expandType(typ.typ, shorthands)
       };
     }

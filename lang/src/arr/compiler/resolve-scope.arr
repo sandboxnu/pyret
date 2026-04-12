@@ -767,18 +767,12 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
       cases(Option) val-info block:
         | none => raise("The value is a global that doesn't exist in any module: " + name)
         | some(shadow val-info) =>
-          cases(C.ValueExport) val-info block:
-            | v-var(_, t) =>
-              # ZACK TODO: what should we do with vars here??
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-var, names.s-global(A.dummy-loc, name), A.a-blank, "")
-              bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
-              acc.set-now(name, b)
-            | else =>
-              # TODO(joe): Good place to add _location_ to valueexport to report errs better
-              b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), C.vb-let, names.s-global(A.dummy-loc, name), A.a-blank, "IMPORT PLACEHOLDER")
-              bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
-              acc.set-now(name, b)
-          end
+          vbinder = if C.is-v-var(val-info): C.vb-var else: C.vb-let end
+          doc = if C.is-v-fun(val-info): val-info.doc else: "" end
+          b = C.value-bind(C.bo-global(some(origin), uri-of-definition, origin.original-name), 
+            vbinder, names.s-global(A.dummy-loc, name), A.a-blank, doc)
+          bindings.set-now(names.s-global(A.dummy-loc, name).key(), b)
+          acc.set-now(name, b)
       end
     end
     acc.freeze()
@@ -891,16 +885,14 @@ fun resolve-names(p :: A.Program, thismodule-uri :: String, initial-env :: C.Com
         name-errors := link(C.name-not-provided(l, imp-loc, vname, "value"), name-errors)
         env
       | some(value-export) =>
-        vbinder = cases(C.ValueExport) value-export block:
-          | v-var(_, t) => C.vb-var
-          | else => C.vb-let
-        end
+        vbinder = if C.is-v-var(value-export): C.vb-var else: C.vb-let end
+        doc = if C.is-v-fun(value-export): value-export.doc else: "" end
         atom-env = make-import-atom-for(as-name, value-export.origin.uri-of-definition, env, bindings,
           C.value-bind(C.bo-module(as-name.l, 
               value-export.origin.definition-bind-site,
               value-export.origin.uri-of-definition,
               value-export.origin.original-name),
-            vbinder, _, A.a-any(vname.l), "VALUE ENV PLACEHOLDER"))
+            vbinder, _, A.a-any(vname.l), doc))
         atom-env.env
     end
   end
