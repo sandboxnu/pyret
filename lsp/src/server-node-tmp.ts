@@ -426,7 +426,7 @@ connection.onHover(async (params) => {
 
     const parts: string[] = [];
     if (result.ann) {
-      parts.push(`\`${result.name} :: ${result.ann}\``);
+      parts.push(`\`\`\`pyret\n${result.name} :: ${result.ann}\n\`\`\``);
     }
     if (result.doc) {
       if (result.ann) {

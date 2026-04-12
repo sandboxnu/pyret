@@ -233,7 +233,7 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
               ann-json = if A.is-a-blank(hover-info.ann):
                 J.j-null
               else:
-                J.j-str(hover-info.ann.tosource().pretty(1000).join-str(""))
+                J.j-str(hover-info.ann.tosource().pretty(40).join-str("\n"))
               end
               d = [SD.string-dict:
                 "type", J.j-str("hover-success"),
