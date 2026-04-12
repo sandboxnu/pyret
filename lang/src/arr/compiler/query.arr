@@ -149,6 +149,31 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
   end
 end
 
+# this is a lot like jump-to-def
+# TODO: abstract suitably!
+fun hover(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Either<String, {String; S.Ann}>:
+  cases(Option) cache-manager.get-surface-ast(uri):
+    | none => E.left("AST not available")
+    | some(ast) =>
+      cases(Option) cache-manager.get-named-result(uri):
+        | none => E.left("Resolved AST not available")
+        | some(named-result) =>
+          cases(Option) find-name-at(ast, line, col):
+            | none => E.left("Did not select a name")
+            | some(name) =>
+              cases(Option) find-name-key-by-srcloc(named-result.ast, name.l):
+                | none => E.left("Post-resolution name not found")
+                | some(key) =>
+                  cases(Option) named-result.env.bindings.get-now(key):
+                    | none => E.left("No value identifier binding found")
+                    | some(vb) => E.right({vb.doc; vb.ann})
+                  end
+              end
+          end
+      end
+  end
+end
+
 fun document-symbols(cache-manager, uri :: String)
   -> E.Either<String, List<{String; String; S.Srcloc}>>:
   cases(Option) cache-manager.get-named-result(uri):

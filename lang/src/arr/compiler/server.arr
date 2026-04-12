@@ -166,6 +166,10 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
         line = query-opts.get-value("line")
         col = query-opts.get-value("col")
         Q.jump-to-def(cache-manager, base-uri, line, col)
+      | query == "hover" then:
+        line = query-opts.get-value("line")
+        col = query-opts.get-value("col")
+        Q.hover(cache-manager, base-uri, line, col)
       | query == "document-symbols" then:
         Q.document-symbols(cache-manager, base-uri)
       | query == "check" then:
@@ -215,6 +219,22 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
                 "start-column", J.j-num(srcloc.start-column),
                 "end-line", J.j-num(srcloc.end-line),
                 "end-column", J.j-num(srcloc.end-column)
+              ]
+              send-message(J.j-obj(d).serialize())
+          end
+        | query == "hover" then:
+          cases(E.Either) info-result block:
+            | left(error-str) =>
+              err("hover: no result (errors: " + error-str + ")\n")
+              d = [SD.string-dict: "type", J.j-str("hover-failure")]
+              send-message(J.j-obj(d).serialize())
+            | right(hover-info) =>
+              # TODO: return an object instead of a tuple in hover and jump
+              d = [SD.string-dict:
+                "type", J.j-str("hover-success"),
+                # TODO: slightly better serialization! and prune out stuff too!
+                "ann", J.j-str(hover-info.{1}.tosource().pretty(1000).join-str("")),
+                "doc", J.j-str(hover-info.{0}),
               ]
               send-message(J.j-obj(d).serialize())
           end

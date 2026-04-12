@@ -113,6 +113,7 @@ connection.onInitialize(async (_params) => {
   const capabilities: ServerCapabilities = {
     textDocumentSync: TextDocumentSyncKind.Incremental,
     definitionProvider: true,
+    hoverProvider: true,
     documentSymbolProvider: true,
     diagnosticProvider: {
       interFileDependencies: false,
@@ -312,6 +313,8 @@ function sendCheckRequest(
 }
 
 // #region LSP request handlers
+// TODO: there is a lot of redundancy here, we should probably develop better
+// abstractions here! especially for the off-by-one location issues (hacked in rn)
 
 connection.onDocumentSymbol(async (params) => {
   const portFile = getSocketPath();
@@ -365,6 +368,7 @@ connection.onDefinition(async (params) => {
   }
 
   // LSP positions are 0-indexed; Pyret srclocs are 1-indexed
+  // TODO: fix these awful off-by-one errors!
   const line = params.position.line + 1;
   const col = params.position.character + 1;
   const filePath = uriToFilePath(params.textDocument.uri);
@@ -382,6 +386,51 @@ connection.onDefinition(async (params) => {
     return result;
   } catch (err) {
     connection.console.error(`jump-to-def error: ${err}`);
+    return null;
+  }
+});
+
+interface HoverResult {
+  ann: string;
+  doc: string;
+}
+
+function parseHover(msg: any): HoverResult | null {
+  if (msg.type === "hover-success") {
+    return { ann: msg.ann, doc: msg.doc };
+  }
+  return null;
+}
+
+connection.onHover(async (params) => {
+  const portFile = getSocketPath();
+  if (!fs.existsSync(portFile)) {
+    connection.console.error("Pyret server not running, cannot get hover info");
+    return null;
+  }
+
+  const line = params.position.line + 1;
+  const col = params.position.character + 1;
+  const filePath = uriToFilePath(params.textDocument.uri);
+
+  try {
+    const result = await sendQueryRequest(
+      portFile,
+      "hover",
+      filePath,
+      { line, col },
+      parseHover,
+    );
+    if (!result) return null;
+
+    return {
+      contents: {
+        kind: "markdown",
+        value: `ann:\`${result.ann}\`\n\ndoc: ${result.doc}`,
+      },
+    };
+  } catch (err) {
+    connection.console.error(`hover error: ${err}`);
     return null;
   }
 });
