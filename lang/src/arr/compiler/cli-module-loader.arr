@@ -37,6 +37,7 @@ end
 
 include from CS:
   type Loadable
+  type NameResolution
 end
 
 clist = C.clist
@@ -49,19 +50,19 @@ type CacheManager = {
   cached-available :: (String, String, String, Number -> Option<Any>),
   get-cached :: (String, String, String, Any -> Any),
   get-cached-if-available :: (String, Any -> Any),
-  get-loadable :: (String, List<String>, Any, Any -> Option<CL.Loadable>),
-  set-loadable :: (String, CL.Locator, CL.Loadable -> String),
+  get-loadable :: (String, List<String>, Any, Any -> Option<Loadable>),
+  set-loadable :: (String, CL.Locator, Loadable -> String),
   get-builtin-locator :: (String, List<String>, String -> CL.Locator),
   set-surface-ast :: (String, A.Expr -> Nothing),
   get-surface-ast :: (String -> Option<A.Expr>),
-  set-named-result :: (String, CS.NameResolution -> Nothing),
-  get-named-result :: (String -> Option<CS.NameResolution>)
+  set-named-result :: (String, NameResolution -> Nothing),
+  get-named-result :: (String -> Option<NameResolution>)
 }
 
 type CacheValue = {
   surface-ast :: Option<A.Expr>, 
-  named-result :: Option<CS.NameResolution>,
-  loadable :: Option<CL.Loadable>
+  named-result :: Option<NameResolution>,
+  loadable :: Option<Loadable>
 }
 
 # NOTE(joe): This is just a little one-off type to represent a simple
