@@ -1,5 +1,3 @@
-use context empty-context
-
 x :: Number
 x = 17
 
@@ -40,3 +38,9 @@ g
 
 g-ann :: Any = lam(n :: Number) -> Boolean: not-zero(n) end
 g-ann
+
+fun generic<a>(l :: List<a>) -> List<a>:
+  l + l
+end
+
+generic

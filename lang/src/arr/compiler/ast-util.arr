@@ -1547,7 +1547,7 @@ fun get-typed-provides(resolved, typed :: TCS.Typed, uri :: URI, compile-env :: 
   end
 end
 
-fun get-fun-hover-info(expr :: A.Expr) -> {String; A.Ann}:
+fun get-fun-hover-info(expr :: A.Expr, visitor) -> {String; A.Ann}:
   # empty string sounds bad but we already are parsing missing docstrings
   # into the empty string, so we have to detect and elide anyways...
   # similarly, we detect and elide empty annotations,
@@ -1567,15 +1567,34 @@ fun get-fun-hover-info(expr :: A.Expr) -> {String; A.Ann}:
     A.a-arrow-argnames(A.dummy-loc, a-field-params, ret, false)
   end
 
+  # we have to visit the resulting arrow ann to resolve names.
+  # while doing so, names bound as type parameters in the expr need to be dealt with
+  # (otherwise they would be unbound).
+  # The proper thing to do would be to use `a-forall`, which doesn't exist,
+  # so we use `a-any` as a last resort (at the cost of worse hovering).
+  fun tparam-visitor(tparams :: List<A.Name>):
+    tparam-names = tparams.map(_.toname())
+    visitor.{
+      method a-name(self, l, id):
+        if A.is-s-name(id) and tparam-names.member(id.s):
+          # TODO: fix this!
+          A.a-any(l)
+        else:
+          visitor.a-name(l, id)
+        end
+      end
+    }
+  end
+
   cases(A.Expr) expr:
-    | s-lam(_, _, _, params, ann, doc, _, _, _, _) => 
-      {doc; piece-into-arrow(params, ann)}
-    | s-fun(_, _, _, _, params, ann, doc, _, _, _, _) => 
-      {doc; piece-into-arrow(params, ann)}
-    | s-method(_, _, _, params, ann, doc, _, _, _, _) => 
-      {doc; piece-into-arrow(params, ann)}
-    | s-method-field(_, _, _, params, ann, doc, _, _, _, _) =>
-      {doc; piece-into-arrow(params, ann)}
+    | s-lam(_, _, tparams, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | s-fun(_, _, tparams, _, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | s-method(_, _, tparams, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
+    | s-method-field(_, _, tparams, params, ann, doc, _, _, _, _) =>
+      {doc; piece-into-arrow(params, ann).visit(tparam-visitor(tparams))}
     | else => {""; A.a-blank}
   end
 end
