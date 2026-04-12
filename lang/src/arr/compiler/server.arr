@@ -13,6 +13,7 @@ import js-file("server") as S
 import file("./cli-module-loader.arr") as CLI
 import file("./compile-structs.arr") as CS
 import file("./compile-lib.arr") as CL
+import ast as A
 import file("./query.arr") as Q
 import file("locators/builtin.arr") as B
 
@@ -166,6 +167,10 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
         line = query-opts.get-value("line")
         col = query-opts.get-value("col")
         Q.jump-to-def(cache-manager, base-uri, line, col)
+      | query == "hover" then:
+        line = query-opts.get-value("line")
+        col = query-opts.get-value("col")
+        Q.hover(cache-manager, base-uri, line, col)
       | query == "document-symbols" then:
         Q.document-symbols(cache-manager, base-uri)
       | query == "check" then:
@@ -215,6 +220,26 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
                 "start-column", J.j-num(srcloc.start-column),
                 "end-line", J.j-num(srcloc.end-line),
                 "end-column", J.j-num(srcloc.end-column)
+              ]
+              send-message(J.j-obj(d).serialize())
+          end
+        | query == "hover" then:
+          cases(E.Either) info-result block:
+            | left(error-str) =>
+              err("hover: no result (errors: " + error-str + ")\n")
+              d = [SD.string-dict: "type", J.j-str("hover-failure")]
+              send-message(J.j-obj(d).serialize())
+            | right(hover-info) =>
+              ann-json = if A.is-a-blank(hover-info.ann):
+                J.j-null
+              else:
+                J.j-str(hover-info.ann.tosource().pretty(40).join-str("\n"))
+              end
+              d = [SD.string-dict:
+                "type", J.j-str("hover-success"),
+                "name", J.j-str(hover-info.name),
+                "ann", ann-json,
+                "doc", J.j-str(hover-info.docstring),
               ]
               send-message(J.j-obj(d).serialize())
           end
