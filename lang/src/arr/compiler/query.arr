@@ -144,6 +144,48 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
   end
 end
 
+fun document-symbols(cache-manager, uri :: String)
+  -> E.Either<String, List<{String; String; S.Srcloc}>>:
+  cases(Option) cache-manager.get-named-result(uri):
+    | none => E.left("Resolved AST not available")
+    | some(named-result) =>
+      cases(CS.ComputedEnvironment) named-result.env:
+        | computed-none => E.left("Computed environment not available")
+        | computed-env(_, _, _, _, _, _, _) =>
+          env = named-result.env
+
+          value-symbols = for fold(acc from [list:], k from env.env.keys-list()):
+            vb = env.env.get-value(k)
+            loc = vb.origin.definition-bind-site
+            if vb.origin.new-definition and S.is-srcloc(loc):
+              kind = cases(CS.ValueBinder) vb.binder:
+                | vb-letrec => "vb-letrec"
+                | vb-let => "vb-let"
+                | vb-var => "vb-var"
+              end
+              link({vb.origin.original-name.toname(); kind; loc}, acc)
+            else:
+              acc
+            end
+          end
+
+          type-symbols = for fold(acc from [list:], k from env.type-env.keys-list()):
+            tb = env.type-env.get-value(k)
+            loc = tb.origin.definition-bind-site
+            if tb.origin.new-definition and S.is-srcloc(loc):
+              link({tb.origin.original-name.toname(); "type"; loc}, acc)
+            else:
+              acc
+            end
+          end
+
+          # NOTE: module-env is skipped because all module bindings come from
+          # import statements (both explicit and implicit), not definitions.
+          E.right(value-symbols + type-symbols)
+      end
+  end
+end
+
 fun first-srcloc(ed :: ED.ErrorDisplay) -> Option<S.Srcloc>:
   doc: "Walk an ErrorDisplay tree and return the first concrete srcloc found."
   cases(ED.ErrorDisplay) ed:
