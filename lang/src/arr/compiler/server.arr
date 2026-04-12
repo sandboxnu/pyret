@@ -13,6 +13,7 @@ import js-file("server") as S
 import file("./cli-module-loader.arr") as CLI
 import file("./compile-structs.arr") as CS
 import file("./compile-lib.arr") as CL
+import ast as A
 import file("./query.arr") as Q
 import file("locators/builtin.arr") as B
 
@@ -229,12 +230,16 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
               d = [SD.string-dict: "type", J.j-str("hover-failure")]
               send-message(J.j-obj(d).serialize())
             | right(hover-info) =>
-              # TODO: return an object instead of a tuple in hover and jump
+              ann-json = if A.is-a-blank(hover-info.ann):
+                J.j-null
+              else:
+                J.j-str(hover-info.ann.tosource().pretty(1000).join-str(""))
+              end
               d = [SD.string-dict:
                 "type", J.j-str("hover-success"),
-                # TODO: slightly better serialization! and prune out stuff too!
-                "ann", J.j-str(hover-info.{1}.tosource().pretty(1000).join-str("")),
-                "doc", J.j-str(hover-info.{0}),
+                "name", J.j-str(hover-info.name),
+                "ann", ann-json,
+                "doc", J.j-str(hover-info.docstring),
               ]
               send-message(J.j-obj(d).serialize())
           end

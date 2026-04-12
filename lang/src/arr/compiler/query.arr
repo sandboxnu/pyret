@@ -150,8 +150,9 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
 end
 
 # this is a lot like jump-to-def
-# TODO: abstract suitably!
-fun hover(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Either<String, {String; S.Ann}>:
+type HoverResult = { name :: String, docstring :: String, ann :: A.Ann }
+
+fun hover(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Either<String, HoverResult>:
   cases(Option) cache-manager.get-surface-ast(uri):
     | none => E.left("AST not available")
     | some(ast) =>
@@ -166,7 +167,7 @@ fun hover(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Eith
                 | some(key) =>
                   cases(Option) named-result.env.bindings.get-now(key):
                     | none => E.left("No value identifier binding found")
-                    | some(vb) => E.right({vb.doc; vb.ann})
+                    | some(vb) => E.right({ name: name.toname(), docstring: vb.doc, ann: vb.ann })
                   end
               end
           end

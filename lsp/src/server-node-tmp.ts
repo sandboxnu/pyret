@@ -391,13 +391,14 @@ connection.onDefinition(async (params) => {
 });
 
 interface HoverResult {
+  name: string;
   ann: string;
   doc: string;
 }
 
 function parseHover(msg: any): HoverResult | null {
   if (msg.type === "hover-success") {
-    return { ann: msg.ann, doc: msg.doc };
+    return { name: msg.name, ann: msg.ann, doc: msg.doc };
   }
   return null;
 }
@@ -423,10 +424,23 @@ connection.onHover(async (params) => {
     );
     if (!result) return null;
 
+    const parts: string[] = [];
+    if (result.ann) {
+      parts.push(`\`${result.name} :: ${result.ann}\``);
+    }
+    if (result.doc) {
+      if (result.ann) {
+        parts.push(result.doc);
+      } else {
+        parts.push(`${result.name}: ${result.doc}`);
+      }
+    }
+    if (parts.length === 0) return null;
+
     return {
       contents: {
         kind: "markdown",
-        value: `ann:\`${result.ann}\`\n\ndoc: ${result.doc}`,
+        value: parts.join("\n\n"),
       },
     };
   } catch (err) {
