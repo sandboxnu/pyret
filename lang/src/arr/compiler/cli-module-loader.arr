@@ -36,7 +36,7 @@ include from E:
 end
 
 include from CS:
-  type Loadable
+  type Loadable,
   type NameResolution
 end
 

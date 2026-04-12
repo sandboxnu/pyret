@@ -81,7 +81,7 @@
              * @param {Number} input
              * @returns {Foo}
              */
-            runFunc(input, offset = 1e-6) {
+            runFuncSafe(input) {
                 let x = input;
                 return RUNTIME.safeCall(
                     () => RUNTIME.execThunk(RUNTIME.makeFunction(() => this.func.app(x))),
@@ -89,21 +89,37 @@
                         if (result.$name === "left") {
                             const output = RUNTIME.getField(result, "v");
                             const y = typeof output == "number" ? output : jsnums.toFixnum(output);
-                            return { "x": [x], "y": [y] };
+                            return {"x": [x], "y": [y]};
                         } else {
-                            // Error (e.g. division by zero) - evaluate at nearby points
-                            const x1 = x - offset;
-                            const x2 = x + offset;
-                            return RUNTIME.safeCall(
-                                () => this.runFunc(x1),
-                                (r1) => RUNTIME.safeCall(
-                                    () => this.runFunc(x2),
-                                    (r2) => ({"x": [x1, x2], "y": [r1.y[0], r2.y[0]]}),
-                                    "runFunc-offset-2"
-                                ),
-                                "runFunc-offset-1"
-                            );
+                            return null;
                         }
+                    },
+                    "runFuncSafe"
+                );
+            };
+
+            runFunc(input, offset = 1e-6) {
+                let x = input;
+                console.log("[runFunc] calling func with x =", x);
+                return RUNTIME.safeCall(
+                    () => this.runFuncSafe(x),
+                    (result) => {
+                        if (result !== null) {
+                            console.log("[runFunc] success: x =", x, "y =", result.y[0]);
+                            return result;
+                        }
+                        console.log("[runFunc] error for x =", x, "trying offsets");
+                        const x1 = x - offset;
+                        const x2 = x + offset;
+                        return RUNTIME.safeCall(
+                            () => this.runFunc(x1),
+                            (r1) => RUNTIME.safeCall(
+                                () => this.runFunc(x2),
+                                (r2) => ({"x": [x1, x2], "y": [r1.y[0], r2.y[0]]}),
+                                "runFunc-offset-2"
+                            ),
+                            "runFunc-offset-1"
+                        );
                     },
                     "runFunc"
                 );
@@ -111,18 +127,23 @@
 
             // initialize data by computing f(x) for endpoints
             initData() {
+                console.log("[initData] starting with xMin =", this.xMinValue, "xMax =", this.xMaxValue);
                 return RUNTIME.safeCall(
                     () => this.runFunc(this.xMinValue),
-                    (lower) => RUNTIME.safeCall(
+                    (lower) => {
+                        console.log("[initData] lower result:", lower);
+                        return RUNTIME.safeCall(
                         () => this.runFunc(this.xMaxValue),
                         (upper) => {
+                            console.log("[initData] upper result:", upper);
                             lower.x.forEach((xi, i) => this.data.set(xi, lower.y[i]));
                             upper.x.forEach((xi, i) => this.data.set(xi, upper.y[i]));
                             // adds lower x1 and upper x2 (outer bounds) if there is more than one x returned
                             this.pending.push([lower.x[0], (/** @type {number} */ (upper.x.at(-1)))]);
+                            console.log("[initData] done, data size =", this.data.size, "pending =", this.pending);
                         },
                         "initData-upper"
-                    ),
+                    );},
                     "initData-lower"
                 );
             };
@@ -179,11 +200,20 @@
             // runs the adaptive sampler
             // TODO: adding different stopping conditions (e.g. error threshold)
             runner() {
+                console.log("[runner] starting, numSamples =", this.numSamples);
+                /** @returns {PyretNothing} */
                 const iterate = () => {
+                    console.log("[iterate] data size =", this.data.size, "/ target =", this.numSamples);
                     if (this.data.size >= this.numSamples) {
+                        console.log("[iterate] done, final data size =", this.data.size);
                         return RUNTIME.nothing;
                     }
                     const { maxInterval, maxIndex } = this.getMaxLoss();
+                    if (maxInterval === null || maxIndex === null) {
+                        console.log("[iterate] no intervals found in lossManager, stopping early");
+                        return RUNTIME.nothing;
+                    }
+                    console.log("[iterate] splitting interval", maxInterval, "at index", maxIndex);
                     return RUNTIME.safeCall(
                         () => this.splitInterval(maxInterval, maxIndex),
                         () => {
@@ -196,6 +226,7 @@
                 return RUNTIME.safeCall(
                     () => this.initData(),
                     () => {
+                        console.log("[runner] initData complete, computing initial losses");
                         this.computeLosses();
                         return iterate();
                     },

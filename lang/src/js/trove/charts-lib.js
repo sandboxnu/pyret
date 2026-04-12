@@ -2786,9 +2786,9 @@
       const loss = ADAPTIVE.defaultLoss;
       const sampler = new ADAPTIVE.AdaptiveSampler(func, xMinValue, xMaxValue, loss, numSamples);
       return RUNTIME.safeCall(() => {
-        sampler.runner();
-        return sampler.data;
-      }, (dataMap) => {
+        return sampler.runner();
+      }, () => {
+        const dataMap = sampler.data;
         const dataValues = [];
         dataMap.forEach((yVal, xVal) => {
           dataValues.push({
