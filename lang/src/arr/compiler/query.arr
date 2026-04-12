@@ -58,6 +58,14 @@ fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: A.Loc) -> Option<St
       else:
         true
       end
+    end,
+    method a-name(self, l, id):
+      if l == srcloc block:
+        result-mangled-name := some(id.key())
+        false
+      else:
+        true
+      end
     end
   }
 
@@ -65,16 +73,36 @@ fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: A.Loc) -> Option<St
   result-mangled-name
 end
 
-is-s-name = A.is-s-name
-fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.Name%(is-s-name)> block:
+fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.Name> block:
+  doc: ```
+       returns either an s-name or an a-name, depending on if the
+       line/col correspond to a value or type identifier
+       ```
+
+  fun line-col-in-span(sl, sc, el, ec) -> Boolean:
+    (sl <= line) and (line <= el) and (sc <= col) and (col <= ec)
+  end
+
   var result-name = none
   visitor = A.default-iter-visitor.{
     method s-name(self, l, s):
       cases (A.Loc) l:
         | builtin(_) => true
         | srcloc(_, sl, sc, _, el, ec, _) =>
-          if (sl <= line) and (line <= el) and (sc <= col) and (col <= ec) block:
+          if line-col-in-span(sl, sc, el, ec) block:
             result-name := some(A.s-name(l, s))
+            false
+          else:
+            true
+          end
+      end
+    end,
+    method a-name(self, l, id):
+      cases (A.Loc) l:
+        | builtin(_) => true
+        | srcloc(_, sl, sc, _, el, ec, _) =>
+          if line-col-in-span(sl, sc, el, ec) block:
+            result-name := some(A.a-name(l, id))
             false
           else:
             true
@@ -91,17 +119,22 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
   cases(Option) cache-manager.get-surface-ast(uri):
     | none => E.left("AST not available")
     | some(ast) =>
-      cases(Option) find-name-at(ast, line, col):
-        | none => E.left("Did not select an identifier")
-        | some(name) =>
-          cases(Option) cache-manager.get-named-result(uri):
-            | none => E.left("Resolved AST not available")
-            | some(named-result) =>
+      cases(Option) cache-manager.get-named-result(uri):
+        | none => E.left("Resolved AST not available")
+        | some(named-result) =>
+          cases(Option) find-name-at(ast, line, col):
+            | none => E.left("Did not select a name")
+            | some(name) =>
               cases(Option) find-name-key-by-srcloc(named-result.ast, name.l):
                 | none => E.left("Post-resolution name not found")
                 | some(key) =>
-                  cases(Option) named-result.env.bindings.get-now(key):
-                    | none => E.left("No identifier binding found")
+                  {qual; bindings} = if A.is-s-name(name):
+                    {"value"; named-result.env.bindings}
+                  else:
+                    {"type"; named-result.env.type-bindings}
+                  end
+                  cases(Option) bindings.get-now(key):
+                    | none => E.left("No " + qual + " identifier binding found")
                     | some(vb) =>
                       E.right({vb.origin.uri-of-definition; vb.origin.definition-bind-site})
                   end
