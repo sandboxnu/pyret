@@ -211,8 +211,8 @@ fun on-query(pyret-dir, cache-manager, query, compile-opts, query-opts, send-mes
           end
         | query == "document-symbols" then:
           cases(E.Either) info-result block:
-            | left(errors) =>
-              err("document-symbols: no result (errors: " + torepr(errors) + ")\n")
+            | left(error-str) =>
+              err("document-symbols: " + error-str + "\n")
               d = [SD.string-dict: "type", J.j-str("document-symbols-failure")]
               send-message(J.j-obj(d).serialize())
             | right(symbols) =>

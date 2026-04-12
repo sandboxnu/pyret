@@ -112,12 +112,12 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
 end
 
 fun document-symbols(cache-manager, uri :: String)
-  -> E.Either<List<CS.CompileError>, List<{String; String; S.Srcloc}>>:
+  -> E.Either<String, List<{String; String; S.Srcloc}>>:
   cases(Option) cache-manager.get-named-result(uri):
-    | none => E.left([list:])
+    | none => E.left("Resolved AST not available")
     | some(named-result) =>
       cases(CS.ComputedEnvironment) named-result.env:
-        | computed-none => E.left([list:])
+        | computed-none => E.left("Computed environment not available")
         | computed-env(_, _, _, _, _, _, _) =>
           env = named-result.env
 
