@@ -224,7 +224,7 @@ declare namespace ABI {
   type __ErrorExt = {
     pyretStack?: string[];
     exn?: val;
-  }
+  } & PyretObject;
 
   class FailureResult {
     exn: Error & __ErrorExt;
@@ -243,6 +243,8 @@ type PyretFunction = val & ABI.PFunction;
 type PyretMethod = val & ABI.PMethod;
 
 type PyretTuple = val & ABI.PTuple;
+
+type PyretEither = val & { $name: "left" | "right" };
 
 // TODO:
 type RunOptions = {
@@ -267,6 +269,7 @@ interface PyretRuntime {
     options?: RunOptions,
   ): void;
   safeCall<T, U>(fun: () => T, after: (result: T) => U, stackFrame: string): U;
+  execThunk(thunk: PyretFunction): PyretEither;
 
   ffi: PyretFFI;
 
@@ -313,7 +316,7 @@ interface PyretRuntime {
   makeNumberFromString(s: string): val;
   makeBoolean(b: boolean): PyretBoolean;
   makeString(s: string): PyretString;
-  makeFunction(fun: func, name: string): PyretFunction;
+  makeFunction(fun: func, name?: string): PyretFunction;
   makeMethod(meth: func, full_meth: func, name: string): PyretMethod;
   // ...
   makeTuple(tup: val[]): PyretTuple;
@@ -363,7 +366,7 @@ interface PyretRuntime {
   checkOpaque(v: val): void;
   checkPyretVal(v: unknown): void;
 
-  nothing: val;
+  nothing: PyretNothing;
   toRepr(v: val): val;
 
   makeSrcloc(srcloc: SrcLocJs): val;
