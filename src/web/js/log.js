@@ -38,10 +38,10 @@ var AJAXBackend = function (url) {
 }
 
 var backend;
-if(LOG_URL && LOG_USER) {
+if(window.LOG_URL && window.LOG_USER) {
 	backend = new FetchWithCredsBackend(LOG_URL, LOG_USER, LOG_PASSWORD);
 }
-else if(LOG_URL) {
+else if(window.LOG_URL) {
 	backend = new AJAXBackend(LOG_URL);
 }
 else {
