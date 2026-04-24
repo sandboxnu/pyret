@@ -134,7 +134,7 @@
           rawImage.onerror = function(e) {
             restarter.error(runtime.ffi.makeMessageException("Unable to load " + originalUrl + ". If that URL loads when you open it in your browser, there may be an issue with how that website serves images for programs. One workaround is to download the image, put it in your Google Drive, and use the 'Insert' button to add it to your program."));
           };
-          rawImage.setAttribute("crossorigin", "anonymous");
+          rawImage.crossOrigin = "anonymous";
           rawImage.src = String(url);
         });
       };
@@ -276,10 +276,12 @@
       });
       f("bitmap-url", function(maybeURL) {
         checkArity(1, arguments, "bitmap-url", false);
+        c1("bitmap-url", maybeURL, annString);
         return bitmapURL(maybeURL);
       }),
       f("image-url", function(maybeURL) {
         checkArity(1, arguments, "image-url", false);
+        c1("image-url", maybeURL, annString);
         return bitmapURL(maybeURL);
       }),
       f("image-file", function(path) {

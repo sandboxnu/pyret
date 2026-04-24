@@ -1,6 +1,7 @@
 ({
   requires: [
     { 'import-type': 'builtin', 'name': 'image-lib' },
+    { "import-type": "builtin", 'name': "charts-util" },
   ],
   nativeRequires: [
     'vegaMin',
@@ -18,7 +19,7 @@
       'plot': "tany",
     }
   },
-  theModule: function (RUNTIME, NAMESPACE, uri, IMAGELIB, vega, canvasLib) {
+  theModule: function (RUNTIME, NAMESPACE, uri, IMAGELIB, CHARTSUTILLIB, vega, canvasLib) {
     'use strict';
 
     var jsnums = RUNTIME.jsnums;
@@ -59,6 +60,7 @@
     const cases = RUNTIME.ffi.cases;
 
     var IMAGE = get(IMAGELIB, "internal");
+    var CHARTSUTIL = get(CHARTSUTILLIB, "values");
 
     const ann = function(name, pred) {
       return RUNTIME.makePrimitiveAnn(name, pred);
@@ -207,6 +209,29 @@
 
     //////////////////////////////////////////////////////////////////////////////
 
+    const chartFontConfig = {
+      signals: [
+        { name: 'fontSizeScale', value: 14 },
+        { name: 'titleText', value: '' },
+      ],
+      mark: {
+        fontSize: { signal: 'fontSizeScale' }
+      },
+      text: {
+        fontSize: { signal: 'fontSizeScale' }
+      },
+      title: {
+        fontSize: { signal: '1.2 * fontSizeScale' },
+      },
+      axis: {
+        labelFontSize: { signal: 'fontSizeScale' },
+        titleFontSize: { signal: 'fontSizeScale' },
+      },
+      legend: {
+        labelFontSize: { signal: 'fontSizeScale' },
+      }
+    };
+
     function pieChart(globalOptions, rawData) {
       /*
         Note: Most of the complexity here is due to supporting the "collapsed" wedge of values,
@@ -275,7 +300,7 @@
         { name: 'collapseThreshold', update: `${collapseThreshold}` },
         {
           name: 'hoveredId',
-          value: 'null',
+          update: 'null',
           on: [
             {
               events: [
@@ -294,7 +319,8 @@
               update: 'null'
             },
           ]
-        }
+        },
+        { name: 'staggerXAxisLabels', update: false },
       );
 
       const dataTable = {
@@ -445,7 +471,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -457,6 +483,7 @@
         marks,
         legends,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       };
     }
 
@@ -890,7 +917,29 @@
           }
         }
       );
-    }      
+    }
+
+    function prepareAxisForOffsets(dir, axis, scales, data, signals) {
+      axis.encode = {
+        labels: {
+          name: `${dir}AxisLabels`,
+          update: {
+            dy: { scale: 'xAxisYOffsets', signal: 'datum.index' }
+          }
+        }
+      };
+      scales.push({
+        name: 'xAxisYOffsets',
+        type: 'ordinal',
+        domain: { data: 'xAxisLabelOffsets', field: 'index' },
+        range: { data: 'xAxisLabelOffsets', field: 'offset' },
+      });
+      data.push({
+        name: 'xAxisLabelOffsets',
+        values: []
+      });
+      signals.push({name: 'staggerXAxisLabels', value: false});
+    }
     
     function barChart(globalOptions, rawData) {
       // Variables and constants 
@@ -902,6 +951,9 @@
       const background = getColorOrDefault(globalOptions['backgroundColor'], 'transparent');
       const axesConfig = dimensions[horizontal ? 'horizontal' : 'vertical']
       const axis = get_axis(rawData);
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
+      const bandwidth = toFixnum(get(rawData, 'bandwidth') || 1);
 
       const data = [];
       
@@ -934,14 +986,15 @@
           name: 'primary',
           type: 'band',
           range: axesConfig.primary.range,
-          domain: { data: 'table', field: 'label' }
+          domain: { data: 'table', field: 'label' },
+          padding: 1 - bandwidth,
         },
         {
           name: 'secondary',
-          type: 'linear',
           range: axesConfig.secondary.range,
           nice: true, zero: true,
-          domain: axis ? { signal: 'extent(domain("secondaryLabels"))' } : { data: 'table', field: 'value' }
+          domain: axis ? { signal: 'extent(domain("secondaryLabels"))' } : { data: 'table', field: 'value' },
+          ...(axesConfig.secondary.name === 'x' ? xAxisType : yAxisType)
         },
         {
           name: 'color',
@@ -974,6 +1027,9 @@
           grid: true, ticks: false, labels: false }
       ];
 
+      // TODO: change this to affect the horizontal axis even if it's a horizontal bar chart?
+      prepareAxisForOffsets(axesConfig.primary.dir, axes[0], scales, data, signals);
+      
       if (axis) {
         axes[1].values = axis.domainRaw;
         axes[1].encode = {
@@ -1003,7 +1059,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1015,6 +1071,7 @@
         axes,
         marks,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       };
     }
 
@@ -1034,6 +1091,9 @@
       const stackType = get(rawData, 'is-stacked');
       const isStacked = stackType !== 'none';
       const isNotFullStacked = (stackType !== 'relative') && (stackType !== 'percent');
+      const bandwidth = toFixnum(get(rawData, 'bandwidth') || 1);
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
 
       const data = [];
 
@@ -1088,7 +1148,7 @@
       const signals = [
         {
           name: 'hoveredSeries',
-          value: 'null',
+          update: 'null',
           on: [
             {
               events: [
@@ -1114,13 +1174,13 @@
         type: 'band',
         range: axesConfig.primary.range,
         domain: { data: 'table', field: 'label' },
-        padding: 0.2
+        padding: 1 - bandwidth
       };
       const secondaryScale = {
         name: 'secondary',
-        type: 'linear',
         range: axesConfig.secondary.range,
-        nice: true, zero: true,
+        ...(axesConfig.secondary.name === 'x' ? xAxisType : yAxisType),
+        nice: true, zero: false,
         domain: (axis && isNotFullStacked) ? { signal: 'extent(domain("secondaryLabels"))' } : { data: 'table', field: 'value1' }
       };
       const scales = [
@@ -1163,6 +1223,9 @@
       ];
       // set the axis with the ticks to have the title, so they don't overlap
       axes[isNotFullStacked ? 1 : 2].title = axisLabels[axesConfig.secondary.dir];
+
+      // TODO: change this to affect the horizontal axis even if it's a horizontal bar chart?
+      prepareAxisForOffsets(axesConfig.primary.dir, axes[0], scales, data, signals);
       
       if (axis) {
         axes[1].values = axis.domainRaw;
@@ -1287,7 +1350,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1300,6 +1363,7 @@
         marks,
         legends,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       }
     }
 
@@ -1317,6 +1381,8 @@
       const background = getColorOrDefault(globalOptions['backgroundColor'], 'transparent');
       const min = getNumOrDefault(globalOptions['min'], undefined);
       const max = getNumOrDefault(globalOptions['max'], undefined);
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
 
       const data = [
         {
@@ -1356,7 +1422,8 @@
         { name: 'minValue',
           update: 'extent(pluck(data("table"), "minVal"))[0]' },
         { name: 'maxValue',
-          update: 'extent(pluck(data("table"), "maxVal"))[1]' }
+          update: 'extent(pluck(data("table"), "maxVal"))[1]' },
+        { name: 'staggerXAxisLabels', update: false },
       ];
       const outlierTooltip = `, 'bottom whisker': datum.lowWhisker, 'top whisker': datum.highWhisker`;
       const tooltip = `{
@@ -1403,8 +1470,8 @@
                 },
                 update: {
                   [PC]: { scale: 'primary', field: 'label', offset: { scale: 'primary', band: 0.5 } },
-                  [S]: { scale: 'secondary',  field: 'lowWhisker' },
-                  [S2]: { scale: 'secondary', field: 'highWhisker' },
+                  [S]: { scale: 'secondary',  field: showOutliers ? 'lowWhisker' : 'minVal' },
+                  [S2]: { scale: 'secondary', field: showOutliers ? 'highWhisker' : 'maxVal' },
                   tooltip: { signal: tooltip }
                 },
               }
@@ -1421,7 +1488,7 @@
                 update: {
                   [PC]: { scale: 'primary', field: 'label', offset: { scale: 'primary', band: 0.5 } },
                   [axesConfig.primary.range]: { scale: 'primary', band: 0.25 },
-                  [S]: { scale: 'secondary', field: 'lowWhisker' },
+                  [S]: { scale: 'secondary', field: showOutliers ? 'lowWhisker' : 'minVal' },
                   tooltip: { signal: tooltip }
                 }
               }
@@ -1438,7 +1505,7 @@
                 update: {
                   [PC]: { scale: 'primary', field: 'label', offset: { scale: 'primary', band: 0.5 } },
                   [axesConfig.primary.range]: { scale: 'primary', band: 0.25 },
-                  [S]: { scale: 'secondary', field: 'highWhisker' },
+                  [S]: { scale: 'secondary', field: showOutliers ? 'highWhisker' : 'maxVal' },
                   tooltip: { signal: tooltip }
                 }
               }
@@ -1534,7 +1601,7 @@
         },
         {
           name: 'secondary',
-          type: 'linear',
+          ...(axesConfig.secondary.name === 'x' ? xAxisType : yAxisType),
           range: axesConfig.secondary.range,
           nice: true, zero: false,
           domain: [{ signal: 'minValue' },{ signal: 'maxValue' }],
@@ -1560,7 +1627,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1572,27 +1639,36 @@
         axes,
         marks,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       };
     }
 
     function histogram(globalOptions, rawData) {
-      const table = get(rawData, 'tab');
+      const values = RUNTIME.ffi.toArray(get(rawData, 'vals'));
       const binWidth = getNumOrDefault(get(rawData, 'bin-width'), undefined);
 
       const maxNumBins = getNumOrDefault(get(rawData, 'max-num-bins'), undefined);
 
+      const xMinValue = getNumOrDefault(globalOptions['x-min'], undefined);
+      const xMaxValue = getNumOrDefault(globalOptions['x-max'], undefined);
+      const yMinValue = getNumOrDefault(globalOptions['y-min'], undefined);
+      const yMaxValue = getNumOrDefault(globalOptions['y-max'], undefined);
       const title = globalOptions['title'];
       const width = globalOptions['width'];
       const height = globalOptions['height'];
       const background = getColorOrDefault(globalOptions['backgroundColor'], 'transparent');
+      const yAxisType = globalOptions['y-axis-type'];
 
       const data = [
         {
           name: 'rawTable',
-          values: table.map((row, i) => ({
-            label: row[0],
-            value: toFixnum(row[1]),
-            image: (row[2] && row[2].val && IMAGE.isImage(row[2].val)) ? imageToCanvas(row[2].val) : undefined,
+          values: values.map((v, i) => ({
+            label: get(v, 'label'),
+            value: toFixnum(get(v, 'value')),
+            image: cases(RUNTIME.ffi.isOption, 'Option', get(v, 'image'), {
+              none: () => undefined,
+              some: (opaqueImg) => imageToCanvas(opaqueImg.val)
+            }),
           })),
           transform: [
             {
@@ -1646,7 +1722,11 @@
       const signals = [
         { name: 'boxHeight', update: 'height / abs(domain("countScale")[0] - domain("countScale")[1])' },
         { name: 'showIndividualBoxes', update: 'boxHeight >= 5' },
-        { name: 'binWidth', update: `${binWidth ?? 0}` }
+        { name: 'binWidth', update: `${binWidth ?? 0}` },
+        { name: 'xMinValue', value: xMinValue },
+        { name: 'xMaxValue', value: xMaxValue },
+        { name: 'yMinValue', value: yMinValue },
+        { name: 'yMaxValue', value: yMaxValue },
       ];
 
       const rangeFormatStr = '"[" + trim(format(datum.bin0, "5~f")) + ", " + trim(format(datum.bin1, "5~f")) + "]"';
@@ -1714,12 +1794,15 @@
           name: 'binScale',
           type: 'linear',
           range: 'width',
-          domain: { data: 'rawTable', field: 'bin1' }
+          zero: false,
+          domain: { data: 'rawTable', fields: ['bin0', 'bin1'] },
+          domainMin: { signal: 'xMinValue' }, domainMax: { signal: 'xMaxValue' }
         },
         {
           name: 'countScale',
-          type: 'linear',
           range: 'height',
+          ...yAxisType,
+          zero: true,
           domain: { data: 'rawTable', field: 'y1' }
         }
       ];
@@ -1730,16 +1813,17 @@
         { orient: 'bottom', scale: 'binScale', zindex: 1, title: xAxisLabel,
           format: '5~r',
           values: (binWidth
-                   ? { signal: `sequence(range('binScale')[0], range('binScale')[1] + binWidth, binWidth)` }
+                   ? { signal: `sequence(floor(domain('binScale')[0] / binWidth) * binWidth, domain('binScale')[1] + binWidth, binWidth)` }
                    : undefined) },
         { orient: 'left', scale: 'countScale', grid: true, title: yAxisLabel }
       ];
       
-
+      prepareAxisForOffsets('x', axes[0], scales, data, signals);
+      
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1751,6 +1835,7 @@
         axes,
         marks,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       };
     }
 
@@ -1768,6 +1853,9 @@
       const height = globalOptions['height'];
       const xAxisLabel = globalOptions['x-axis'];
       const yAxisLabel = globalOptions['y-axis'];
+      const xMinValue = getNumOrDefault(globalOptions['x-min'], undefined);
+      const xMaxValue = getNumOrDefault(globalOptions['x-max'], undefined);
+      const yAxisType = globalOptions['y-axis-type'];
       const background = getColorOrDefault(globalOptions['backgroundColor'], 'transparent');
 
       const data = [
@@ -1816,21 +1904,27 @@
       ];
       const signals = [
         { name: 'dotSize', value: pointSize },
-        { name: 'binSize', update: 'invert("binScale", dotSize)' },
+        { name: 'binSize', update: 'abs(dotSize * (domain("binScale")[1] - domain("binScale")[0]) / (range("binScale")[1] - range("binScale")[0]))' },
         { name: 'actualDotSize', update: 'scale("dotScale", 0) - scale("dotScale", 1)' },
         { name: 'headspace', value: '0.25' },
-        { name: 'wrapMaxY', update: 'floor(domain("dotScale")[1] * (1 - headspace))' }
+        { name: 'wrapMaxY', update: 'floor(domain("dotScale")[1] * (1 - headspace))' },
+        { name: 'xMinValue', value: xMinValue },
+        { name: 'xMaxValue', value: xMaxValue },
+        { name: 'staggerXAxisLabels', update: false },
       ];
       const scales = [
         {
           name: 'binScale',
           type: 'linear',
+          zero: false,
           range: { signal: '[0, width - dotSize / 2]' },
-          domain: { data: 'rawTable', field: 'value' }
+          domain: { data: 'rawTable', field: 'value' },
+          domainMin: { signal: 'xMinValue' }, domainMax: { signal: 'xMaxValue' },
         },
         {
           name: 'dotScale',
-          type: 'linear',
+          ...yAxisType,
+          zero: true,
           range: { signal: '[height, dotSize / 2]' },
           domain: { signal: '[0, floor(height / dotSize)]' }
         }
@@ -1899,7 +1993,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1911,6 +2005,7 @@
         axes,
         marks,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       };
     }
 
@@ -1926,6 +2021,7 @@
       const height = globalOptions['height'];
       const xAxisLabel = globalOptions['x-axis'];
       const yAxisLabel = globalOptions['y-axis'];
+      const yAxisType = globalOptions['y-axis-type'];
       const background = getColorOrDefault(globalOptions['backgroundColor'], 'transparent');
 
 
@@ -1958,8 +2054,8 @@
         },
         {
           name: 'secondary',
-          type: 'linear',
           range: 'height',
+          ...yAxisType,
           nice: true, zero: true,
           domain: { data: 'bars', field: 'count' }
         }
@@ -2016,7 +2112,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -2028,6 +2124,7 @@
         axes,
         marks,
         onExit: defaultImageReturn,
+        config: chartFontConfig,
       };
     }
 
@@ -2107,6 +2204,8 @@
     function scatterPlot(globalOptions, rawData, config) {
       const xAxisLabel = globalOptions['x-axis'];
       const yAxisLabel = globalOptions['y-axis'];
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
       const prefix = config.prefix || ''
       const defaultColor = config.defaultColor || default_colors[0];
       const color = getColorOrDefault(get(rawData, 'color'), defaultColor);
@@ -2122,42 +2221,56 @@
       const trendlineWidth = toFixnum(get(rawData, 'trendlineWidth'));
       const trendlineOpacity = toFixnum(get(rawData, 'trendlineOpacity'));
       const trendlineDegree = toFixnum(get(rawData, 'trendlineDegree'));
-      const xMinValue = getNumOrDefault(globalOptions['x-min'], undefined);
-      const xMaxValue = getNumOrDefault(globalOptions['x-max'], undefined);
       const yMinValue = getNumOrDefault(globalOptions['y-min'], undefined);
       const yMaxValue = getNumOrDefault(globalOptions['y-max'], undefined);
+      const imageScaleFactorX = autosizeImage ? '-datum.imageWidth' : -pointSize;
+      const imageScaleFactorY = autosizeImage ? '-datum.imageHeight' : -pointSize;
 
       const points = RUNTIME.ffi.toArray(get(rawData, 'ps'));
-
+      const pointValues = points.map((p) => ({
+        label: get(p, 'label'),
+        x: toFixnum(get(p, 'x')),
+        y: toFixnum(get(p, 'y')),
+        image: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => imageToCanvas(opaqueImg.val)
+        }),
+        imageWidth: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => opaqueImg.val.getWidth()
+        }),
+        imageHeight: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => opaqueImg.val.getHeight()
+        }),
+        imageOffsetX: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => opaqueImg.val.getPinholeX() / opaqueImg.val.getWidth()
+        }),
+        imageOffsetY: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => opaqueImg.val.getPinholeY() / opaqueImg.val.getHeight()
+        }),
+      }));
       const data = [
         {
           name: `${prefix}rawTable`,
-          values: points.map((p) => ({
-            label: get(p, 'label'),
-            x: toFixnum(get(p, 'x')),
-            y: toFixnum(get(p, 'y')),
-            image: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
-              none: () => undefined,
-              some: (opaqueImg) => imageToCanvas(opaqueImg.val)
-            }),
-            imageWidth: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
-              none: () => undefined,
-              some: (opaqueImg) => opaqueImg.val.getWidth()
-            }),
-            imageHeight: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
-              none: () => undefined,
-              some: (opaqueImg) => opaqueImg.val.getHeight()
-            }),
-            imageOffsetX: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
-              none: () => undefined,
-              some: (opaqueImg) => opaqueImg.val.getPinholeX() / opaqueImg.val.getWidth()
-            }),
-            imageOffsetY: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
-              none: () => undefined,
-              some: (opaqueImg) => opaqueImg.val.getPinholeY() / opaqueImg.val.getHeight()
-            }),
-          })),
+          values: pointValues,
           transform: []
+        },
+        {
+          name: `${prefix}tableMarkExtents`,
+          source: `${prefix}rawTable`,
+          transform: [
+            { type: 'formula', as: 'left',
+              expr: `datum.x + (isValid(datum.image) ? datum.imageOffsetX * ${imageScaleFactorX}: ${-pointSize / 2}) / ${prefix}rawDomainUnitInPx` },
+            { type: 'formula', as: 'right',
+              expr: `datum.x + (isValid(datum.image) ? (datum.imageOffsetX * ${imageScaleFactorY} - datum.imageWidth) : ${pointSize}) / ${prefix}rawDomainUnitInPx` },
+            { type: 'formula', as: 'top',
+              expr: `datum.y + (isValid(datum.image) ? datum.imageOffsetY * ${imageScaleFactorY} : ${-pointSize / 2}) / ${prefix}rawRangeUnitInPx` },
+            { type: 'formula', as: 'bot',
+              expr: `datum.y + (isValid(datum.image) ? (datum.imageOffsetY * ${imageScaleFactorY} - datum.imageHeight) : ${pointSize}) / ${prefix}rawRangeUnitInPx` },
+          ],
         },
         {
           name: `${prefix}table`,
@@ -2171,22 +2284,87 @@
         },
       ];
 
-      const domain = computeDomain(data[0].values.map((v) => v.x));
+      // these are measured in pixels
+      let imageOverhangX, imageOverhangY;
+      const imageWidths = pointValues.map((v) => v.imageWidth).filter((v) => v !== undefined);
+      const imageHeights = pointValues.map((v) => v.imageHeight).filter((v) => v !== undefined);
+      if (imageWidths.length === 0 || autosizeImage) {
+        imageOverhangX = pointSize;
+        imageOverhangY = pointSize;
+      } else {
+        let temp;
+        temp = computeDomain(imageWidths);
+        imageOverhangX = temp[1] - temp[0];
+        temp = computeDomain(imageHeights);
+        imageOverhangY = temp[1] - temp[0];
+      }
+      let windowWidth = toFixnum(globalOptions['width']);
+      let windowHeight = toFixnum(globalOptions['height']);
 
+      const rawDomain = computeDomain(pointValues.map((v) => v.x));
+      const rawRange = computeDomain(pointValues.map((v) => v.y));
+      const reducedWidth = windowWidth - imageOverhangX;
+      const reducedHeight = windowHeight - imageOverhangY;
+      const rawDomainUnitInPx = reducedWidth / (rawDomain[1] - rawDomain[0]);
+      const rawRangeUnitInPx = reducedHeight / (rawRange[1] - rawRange[0]);
+      const domain = computeDomain(pointValues.map((v) => {
+        let left, right;
+        if (!autosizeImage || !v.image) {
+          let halfPointSize = pointSize / 2;
+          let inDomainHalfPointSize = halfPointSize / rawDomainUnitInPx;
+          return [v.x - inDomainHalfPointSize, v.x + inDomainHalfPointSize];
+        }
+        left = v.x - v.imageOffsetX * v.imageWidth / rawDomainUnitInPx;
+        right = left + v.imageWidth / rawDomainUnitInPx;
+        return [left, right];
+      }).flat());
+      // console.log("Raw domain", computeDomain(pointValues.map((v) => v.x)), "Point size", pointSize);
+      // console.log({reducedWidth, imageOverhangX, rawDomainUnitInPx});
+      // console.log("Extended domain", domain);
+
+      const range = computeDomain(pointValues.map((v) => {
+        let top, bot;
+        if (!autosizeImage || !v.image) {
+          let halfPointSize = pointSize / 2;
+          let inDomainHalfPointSize = halfPointSize / rawDomainUnitInPx;
+          return [v.y - inDomainHalfPointSize, v.y + inDomainHalfPointSize];
+        }
+        top = v.y + v.imageOffsetY * v.imageHeight / rawDomainUnitInPx;
+        bot = top - v.imageHeight / rawDomainUnitInPx;
+        return [top, bot];
+      }).flat());
+      // console.log("Raw range", computeDomain(pointValues.map((v) => v.y)), "Point size", pointSize);
+      // console.log("Extended range", range);
+
+      function unionExtents(...names) {
+        const names0 = names.map((s) => `${s}[0]`);
+        const names1 = names.map((s) => `${s}[1]`);
+        return `[min(${names0.join(',')}), max(${names1.join(',')})]`
+      }
       const signals = [
-        { name: `${prefix}extentX`, update: `extent(pluck(data("${prefix}rawTable"), "x"))` },
-        { name: `${prefix}extentY`, update: `extent(pluck(data("${prefix}rawTable"), "y"))` },
+        { name: `${prefix}reducedWidth`, update: `width - ${imageOverhangX}` },
+        { name: `${prefix}reducedHeight`, update: `height - ${imageOverhangY}` },
+        { name: `${prefix}rawDomainUnitInPx`, update: `${prefix}reducedWidth / ${rawDomain[1] - rawDomain[0]}` },
+        { name: `${prefix}rawRangeUnitInPx`, update: `${prefix}reducedHeight / ${rawRange[1] - rawRange[0]}` },
+        { name: `${prefix}extentLeft`, update: `extent(pluck(data("${prefix}tableMarkExtents"), "left"))` },
+        { name: `${prefix}extentRight`, update: `extent(pluck(data("${prefix}tableMarkExtents"), "right"))` },
+        { name: `${prefix}extentTop`, update: `extent(pluck(data("${prefix}tableMarkExtents"), "top"))` },
+        { name: `${prefix}extentBot`, update: `extent(pluck(data("${prefix}tableMarkExtents"), "bot"))` },
+        { name: `${prefix}extentX`, update: unionExtents(`${prefix}extentLeft`, `${prefix}extentRight`) },
+        { name: `${prefix}extentY`, update: unionExtents(`${prefix}extentTop`, `${prefix}extentBot`) },
       ];
       const scales = [
         { name: `${prefix}xscale`,
-          type: 'linear',
+          ...xAxisType,
           domain: { signal: `${prefix}extentX` },
           range: 'width',
+          zero: false,
           nice: true },
         { name: `${prefix}yscale`,
-          type: 'linear',
+          ...yAxisType,
           domain: { signal: `${prefix}extentY` },
           range: 'height',
+          zero: false,
           nice: true }
       ];
       const marks = [];
@@ -2290,8 +2468,6 @@
           signal: `{ title: "${legend}", Label: datum.label, x: datum.x, y: datum.y }` },
         { signal: `{ title: "${legend}", x: datum.x, y: datum.y }` },
       ];
-      const imageScaleFactorX = autosizeImage ? '-datum.imageWidth' : -pointSize;
-      const imageScaleFactorY = autosizeImage ? '-datum.imageHeight' : -pointSize;
       marks.push({
         type: 'image',
         from: { data: `${prefix}images` },
@@ -2308,11 +2484,7 @@
             y: { scale: `yscale`, field: 'y', offset: { signal: `${imageScaleFactorY} * datum.imageOffsetY` } },
             stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${color}'` },
             strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 1 : 0)` },
-            zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
           },
-          hover: {
-            zindex: { value: 1 }
-          }
         }
       });
       if (pointshapeType === 'circle') {
@@ -2332,11 +2504,9 @@
               y: { scale: `yscale`, field: 'y' },
               fill: { value: color },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${color}'` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
             },
             hover: {
               stroke: { value: color },
-              zindex: { value: 1 }
             }
           }
         });
@@ -2432,11 +2602,9 @@
             x: { scale: `xscale`, field: 'x' },
             y: { scale: `yscale`, field: 'y' },
             strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 2 : 1) * ${lineWidth}` },
-            zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
           },
           hover: {
             strokeWidth: { value: 2 * lineWidth },
-            zindex: { value: 1 }
           }
         }
       });
@@ -2447,6 +2615,8 @@
     function intervalPlot(globalOptions, rawData, config) {
       const xAxisLabel = globalOptions['x-axis'];
       const yAxisLabel = globalOptions['y-axis'];
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
       const legend = get(rawData, 'legend') || config.legend;
       const prefix = config.prefix || ''
       const defaultColor = config.defaultColor || default_colors[0];
@@ -2480,7 +2650,7 @@
             }),
           })),
           transform: [
-            { type: 'formula', as: 'yprime', expr: 'datum.y + datum.delta' }
+            { type: 'formula', as: 'yprime', expr: 'datum.y - datum.delta' }
           ]
         },
         {
@@ -2516,15 +2686,17 @@
 
       const scales = [
         { name: `${prefix}xscale`,
-          type: 'linear',
+          ...xAxisType,
           domain: { signal: `${prefix}extentX` },
           range: 'width',
-          nice: false },
+          nice: false,
+          zero: false },
         { name: `${prefix}yscale`,
-          type: 'linear',
+          ...yAxisType,
           domain: { signal: `${prefix}extentY` },
           range: 'height',
-          nice: false }
+          nice: false,
+          zero: false }
       ];
       const tooltip = {
         signal: `{ title: datum.label, x: datum.x, y: datum.y, ŷ: datum.yprime, 'y - ŷ': datum.delta }`
@@ -2546,11 +2718,7 @@
               y: { scale: `yscale`, field: 'y', offset: { signal: `${-pointSize} * datum.imageOffsetY` } },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${dataColor}'` },
               strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 1 : 0)` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
             },
-            hover: {
-              zindex: { value: 1 }
-            }
           }
         },
         {
@@ -2569,11 +2737,7 @@
               yc: { scale: `yscale`, field: 'y' },
               fill: { value: dataColor },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${dataColor}'` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
             },
-            hover: {
-              zindex: { value: 1 }
-            }
           }
         },
         {
@@ -2607,10 +2771,6 @@
               xc: { scale: `xscale`, field: 'x' },
               yc: { scale: `yscale`, field: 'yprime' },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${intervalColor}'` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
-            },
-            hover: {
-              zindex: { value: 1 }
             }
           }
         },
@@ -2663,6 +2823,8 @@
       const domain = config.domain;
       const xMinValue = domain[0];
       const xMaxValue = domain[1];
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
 
       const fraction = (xMaxValue - xMinValue) / (numSamples - 1);
 
@@ -2676,10 +2838,11 @@
         // from the surrounding chart context
         {
           name: `${prefix}yscale`,
-          type: 'linear',
+          ...yAxisType,
           domain: { signal: `${prefix}extentY` },
           range: 'height',
-          nice: true
+          nice: true,
+          zero: false
         }
       ];
       const tooltip = {
@@ -2703,10 +2866,6 @@
               yc: { scale: `yscale`, field: 'y' },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${pointColor}'` },
               strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 1 : 0)` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
-            },
-            hover: {
-              zindex: { value: 1 }
             }
           }
         }
@@ -2775,6 +2934,8 @@
       const numSamples = toFixnum(globalOptions['num-samples']);
       const xAxisLabel = globalOptions['x-axis'];
       const yAxisLabel = globalOptions['y-axis'];
+      const xAxisType = globalOptions['x-axis-type'];
+      const yAxisType = globalOptions['y-axis-type'];
       const width = toFixnum(globalOptions['width']);
       const height = toFixnum(globalOptions['height']);
       const background = getColorOrDefault(globalOptions['backgroundColor'], 'transparent');
@@ -2783,6 +2944,7 @@
       const gridlines = getGridlines({}, globalOptions);
       const scales = charts.flatMap((c) => c.scales || []);
       const signals = charts.flatMap((c) => c.signals || []);
+      const data = charts.flatMap((c) => c.data || []);
       // NOTE: must compute these before updating the scales array...or else the new scales will
       // become part of the signal definition, which is incorrect!
       signals.push(
@@ -2795,10 +2957,10 @@
         { name: 'yscaleSignal', update: unionScaleSignal(scales.filter((s) => s.name.endsWith('yscale'))) }
       );
       scales.push(
-        { name: 'xscale', domain: { signal: 'xscaleSignal' }, range: 'width',
-          domainMin: { signal: 'xMinValue' }, domainMax: { signal: 'xMaxValue' } },
-        { name: 'yscale', domain: { signal: 'yscaleSignal' }, range: 'height',
-          domainMin: { signal: 'yMinValue' }, domainMax: { signal: 'yMaxValue' } }
+        { name: 'xscale', domain: { signal: 'xscaleSignal' }, range: 'width', ...xAxisType,
+          domainMin: { signal: 'xMinValue' }, domainMax: { signal: 'xMaxValue' }, zero: false },
+        { name: 'yscale', domain: { signal: 'yscaleSignal' }, range: 'height', ...yAxisType,
+          domainMin: { signal: 'yMinValue' }, domainMax: { signal: 'yMaxValue' }, zero: false }
       );
 
       // NOTE: For the axes, we're going to want to put the bar lines at the zeros
@@ -2827,6 +2989,8 @@
         },
       ];
 
+      prepareAxisForOffsets('x', axes[2], scales, data, signals);
+      
       const marks = [
         {
           type: 'group',
@@ -2885,7 +3049,7 @@
         });
         signals.push({
           name: 'hoveredLegend',
-          value: 'null',
+          update: 'null',
           on: [
             {
               events: [
@@ -2908,7 +3072,7 @@
       } else {
         signals.push({
           name: 'hoveredLegend',
-          value: 'null'
+          update: 'null'
         });
       }
 
@@ -2982,20 +3146,22 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
         autosize: 'fit',
         background,
-        data: charts.flatMap((c) => c.data || []),
+        data,
         signals,
         scales,
         axes,
         marks,
         legends,
         config: {
+          ...chartFontConfig,
           legend: {
+            ...chartFontConfig.legend,
             orient: 'bottom',
             layout: { bottom: { anchor: 'middle' } },
           }
@@ -3109,9 +3275,10 @@
       // NOTE(Ben): this externalContext *should* be unnecessary, but for some reason,
       // vega-as-bundled-in-a-jarr doesn't seem to notice NodeCanvas correctly
       const externalContext = canvas.getContext('2d');
-      view.width(width).height(height).resize()
+      view.width(width).height(height).signal('titleText', 'spacer').resize()
       return view.runAsync()
-        .then(() => view.toCanvas(1, { externalContext }))
+        .then(() => rebuildAxisLabels(view))
+        .then(() => view.signal('titleText', view.description()).toCanvas(1, { externalContext }))
         .then(() => externalContext.getImageData(0, 0, width, height));
     }
 
@@ -3131,14 +3298,22 @@
     }
 
     function renderStaticImage(processed, globalOptions, rawData) {
+      function isImageOrCanvas(v) {
+        if (!v) return false;
+        if (IMAGE.isImage(v)) return true;
+        return canvasLib && canvasLib.Canvas && v instanceof canvasLib.Canvas;
+      }
+      const isVegaString = isTrue(globalOptions['vega']);
+      const staggerXAxisLabels = isTrue(globalOptions['x-axis-stagger-labels']);
       return RUNTIME.pauseStack(restarter => {
         try {
-          if (canvasLib && canvasLib.Canvas) {
-            console.log(JSON.stringify(processed, (k, v) => (v && (IMAGE.isImage(v) || (v instanceof canvasLib.Canvas))) ? v.ariaText : v, 2));
+          if (isVegaString) {
+            return restarter.resume(JSON.stringify(processed, (k, v) => isImageOrCanvas(v) ? v.ariaText : v, 2));
           }
           const width = toFixnum(globalOptions['width']);
           const height = toFixnum(globalOptions['height']);
           const view = new vega.View(vega.parse(processed));
+          view.signal('staggerXAxisLabels', staggerXAxisLabels);
           return renderToCanvas(view, width, height).then((data) => imageDataReturn(data, restarter));
         } catch(e) {
           return restarter.error(e);
@@ -3146,6 +3321,18 @@
       });
     }
 
+    function rebuildAxisLabels(view) {
+      // const { data: { xAxisLabels } } = view.getState({data: (name) => name === "xAxisLabels"});
+      try {
+        if (!view.signal('staggerXAxisLabels')) return view;
+        const xAxisLabels = view.data("xAxisLabels");
+        const offsets = xAxisLabels.map((mark, i) => ({ index: mark.datum.index, offset: (i % 2) * 25 }));
+        return view.data('xAxisLabelOffsets', offsets).runAsync();
+      } catch(e) {
+        return view;
+      }
+    }
+    
     function renderInteractiveChart(processed, globalOptions, rawData) {
       return RUNTIME.pauseStack(restarter => {
         const root = $('<div/>');
@@ -3159,24 +3346,34 @@
         let height = toFixnum(globalOptions['height']);
         const vegaTooltipHandler = new vegaTooltip.Handler({
           formatTooltip: (value, valueToHtml, maxDepth, baseURL) => {
-            if (typeof value === 'object') {
+            let ans;
+            if (typeof value === 'object' && value.title instanceof Array) {
               const { title, ...rest } = value;
               if (title instanceof Array) {
                 const titleStr = `<h2>${title.map(valueToHtml).join('<br/>')}</h2>`;
                 const restStr = vegaTooltip.formatValue(rest, valueToHtml, maxDepth, baseURL);
-                return titleStr + restStr;
+                ans = titleStr + restStr;
               }
+            } else {
+              ans = vegaTooltip.formatValue(value, valueToHtml, maxDepth, baseURL);
             }
-            return vegaTooltip.formatValue(value, valueToHtml, maxDepth, baseURL);
+            ans = ans.replaceAll("<table>", "<table class=\"pyret-row\">");
+            ans = ans.replaceAll("<td class=\"value\">", "<td class=\"value replTextOutput\"> ");
+            return ans;
           }
         });
+        const staggerXAxisLabels = isTrue(globalOptions['x-axis-stagger-labels']);
         const view = new vega.View(vega.parse(processed), {
           container: chart[0],
           renderer: 'svg',
           hover: true,
           tooltip: vegaTooltipHandler.call
         });
-        view.width(width).height(height).resize();
+        view.width(width)
+          .height(height)
+          .signal('staggerXAxisLabels', staggerXAxisLabels)
+          .signal('titleText', view.description())
+          .resize();
 
         var tmp = processed;
         tmp.view = view;
@@ -3194,6 +3391,7 @@
         const result = tmp;
         try {
           view.runAsync()
+            .then(() => rebuildAxisLabels(view))
             .then(() => {
               if (processed.addControls) {
                 processed.addControls(view, overlay);
@@ -3232,10 +3430,21 @@
     }
         
 
+    function configScale(val) {
+      return cases(get(CHARTSUTIL, "is-AxisType"), "AxisType", val, {
+        'at-linear': () => ({ type: 'linear' }),
+        'at-power': (pow) => ({ type: 'pow', exponent: toFixnum(pow) }),
+        'at-log': (base) => ({ type: 'log', base: toFixnum(base) }),
+        'at-symlog': (base) => ({ type: 'symlog', constant: toFixnum(base) })
+      });
+    }
     function pyretObjToObj(globalOptions) {
       const ret = {};
       for (const field of RUNTIME.getFields(globalOptions)) {
         ret[field] = get(globalOptions, field);
+        if (get(CHARTSUTIL, 'is-AxisType').app(ret[field])) {
+          ret[field] = configScale(ret[field]);
+        }
       }
       return ret;
     }
@@ -3252,7 +3461,6 @@
             return RUNTIME.safeCall(() => f(globalOptions, rawData), (chart) => {
               return renderInteractiveChart(chart, globalOptions, rawData);
             }, 'render-interactive-chart');
-            return renderInteractiveChart(f(globalOptions, rawData), globalOptions, rawData);
           } else {
             return RUNTIME.ffi.throwMessageException('Cannot display interactive charts headlessly');
           }
