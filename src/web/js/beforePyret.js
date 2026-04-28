@@ -4,24 +4,118 @@ var originalPageLoad = Date.now();
 console.log("originalPageLoad: ", originalPageLoad);
 
 // Transparently route browser fetches to allowlisted hosts through the
-// server-side proxy at /load-shareurl. Some school networks block
-// raw.githubusercontent.com directly; the proxy gives those users a working
-// path. Installed as early as possible so it catches every fetch caller:
-// makeUrlFile in drive.js, the url/url-file import prefetches in cpo-main.js,
-// and the Pyret runtime's F.fetch trove (via cross-fetch -> window.fetch).
+// server-side proxy at /load-shareurl, but only when the direct path doesn't
+// work.
+//
+// Strategy: the FIRST fetch to an allowlisted host fires direct + proxied in
+// parallel. We decide shouldProxy for the rest of the page-load from direct's
+// response *headers*:
+//   - direct returned 2xx with content-type text/plain  -> shouldProxy=false:
+//     serve direct's response, abort the in-flight proxy fetch.
+//   - direct failed, hung past timeout, or returned anything else
+//                                                        -> shouldProxy=true:
+//     serve proxy's response.
+// A key idea is that network-blocky things sometimes return 200 with a
+// message page about blocking (or an error, but that counts as a fail). We
+// don't want to accidentally think that's a success.
+// shouldProxy state is in-memory and per-host — never persisted, since
+// reachability changes between networks and a stale value would silently
+// break loads.
+//
+// Installed on the global fetch as early as possible so it catches every fetch
+// caller; some of them are in the pyret-lang runtime and would be otherwise
+// difficult to configure.
 const SHAREURL_PROXY_HOSTS = new Set(['raw.githubusercontent.com']);
+const SHAREURL_DIRECT_TIMEOUT_MS = 5000;
 const _origFetch = window.fetch.bind(window);
-window.fetch = function(input, init) {
-  const urlStr = (typeof input === 'string') ? input
-                 : (typeof Request !== 'undefined' && input instanceof Request) ? input.url
-                 : String(input);
-  try {
-    const u = new URL(urlStr, window.location.href);
-    if (SHAREURL_PROXY_HOSTS.has(u.hostname)) {
-      return _origFetch('/load-shareurl?url=' + encodeURIComponent(urlStr), init);
-    }
-  } catch (_) { /* not a parseable URL; fall through */ }
-  return _origFetch(input, init);
+
+const _shareurlShouldProxy = new Map();          // host -> boolean
+const _shareurlShouldProxyInflight = new Map();  // host -> Promise<boolean>
+
+function _shareurlProxyUrl(fetchInput) {
+  return '/load-shareurl?url=' + encodeURIComponent(_shareurlInputToUrl(fetchInput));
+}
+
+function _shareurlInputToUrl(fetchInput) {
+  return (typeof fetchInput === 'string') ? fetchInput
+         : (typeof Request !== 'undefined' && fetchInput instanceof Request) ? fetchInput.url
+         : String(fetchInput);
+}
+
+function _shareurlVerifyDirect(r) {
+  if (!r.ok) return false;
+  const ct = (r.headers.get('content-type') || '').toLowerCase();
+  // Source files served from raw.githubusercontent.com come back as
+  // text/plain (.arr, .json, .csv, .md all do). Anything else — HTML block
+  // pages, captive portals, surprise content types — we don't trust as a
+  // real upstream response.
+  return ct.startsWith('text/plain');
+}
+
+function _shareurlFetch(shouldProxy, fetchInput, fetchInit) {
+  const maybeProxyInput = shouldProxy ? _shareurlProxyUrl(fetchInput) : fetchInput;
+  return _origFetch(maybeProxyInput, fetchInit);
+}
+
+function _shareurlRace(fetchInput, fetchInit) {
+  const proxyCtrl = new AbortController();
+  const proxyP = _origFetch(_shareurlProxyUrl(fetchInput),
+    Object.assign({}, fetchInit, { signal: proxyCtrl.signal }));
+  const directP = _origFetch(fetchInput, fetchInit);
+
+  // shouldProxy is decided from direct's headers — a timeout flips us to
+  // true if direct hangs at the network level (no headers, no error).
+  const shouldProxyPromise = Promise.race([
+    directP.then(r => !_shareurlVerifyDirect(r), () => true),
+    new Promise(resolve => setTimeout(() => resolve(true), SHAREURL_DIRECT_TIMEOUT_MS)),
+  ]);
+
+  // Caller's response: direct if its headers verify (and abort the proxy
+  // fetch to stop wasting server bandwidth); otherwise proxy. If proxy also
+  // fails, surface its error.
+  const responsePromise = new Promise((resolve, reject) => {
+    let gotSomeResponse = false;
+    directP.then(r => {
+      if (!gotSomeResponse && _shareurlVerifyDirect(r)) {
+        gotSomeResponse = true;
+        proxyCtrl.abort();
+        resolve(r);
+      }
+    }).catch(() => { /* wait for proxy to resolve or reject */ });
+    proxyP.then(r => {
+      if (!gotSomeResponse) { gotSomeResponse = true; resolve(r); }
+    }).catch(e => {
+      if (!gotSomeResponse) reject(e);
+    });
+  });
+
+  return { responsePromise, shouldProxyPromise };
+}
+
+window.fetch = function(fetchInput, fetchInit) {
+  let host;
+  try { host = new URL(_shareurlInputToUrl(fetchInput), window.location.href).hostname; }
+  catch (_) { return _origFetch(fetchInput, fetchInit); }
+  if (!SHAREURL_PROXY_HOSTS.has(host)) return _origFetch(fetchInput, fetchInit);
+
+  const shouldProxy = _shareurlShouldProxy.get(host);
+  const inflight = _shareurlShouldProxyInflight.get(host);
+  if (shouldProxy !== undefined) {
+    return _shareurlFetch(shouldProxy, fetchInput, fetchInit);
+  } else if (inflight) {
+    // shouldProxy pending: queue this fetch on it and issue a single fresh
+    // request once shouldProxy is decided.
+    return inflight.then(sp => _shareurlFetch(sp, fetchInput, fetchInit));
+  } else {
+    // First fetch to this host this page-load: run the race.
+    const { responsePromise, shouldProxyPromise } = _shareurlRace(fetchInput, fetchInit);
+    _shareurlShouldProxyInflight.set(host, shouldProxyPromise);
+    shouldProxyPromise.then(sp => {
+      _shareurlShouldProxy.set(host, sp);
+      _shareurlShouldProxyInflight.delete(host);
+    });
+    return responsePromise;
+  }
 };
 
 const isEmbedded = window.parent !== window;

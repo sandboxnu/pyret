@@ -224,6 +224,10 @@ function start(config, onServerReady) {
         } catch (_) { return false; }
       },
     });
+    // If the client disconnects (e.g. the browser aborts /load-shareurl after
+    // direct succeeded), tear down the upstream connection too — otherwise
+    // we'd keep streaming bytes from raw.githubusercontent.com to nowhere.
+    res.on('close', function() { upstream.destroy(); });
     upstream.on('error', function(err) {
       if (!res.headersSent) opts.onError(res, err);
     });
