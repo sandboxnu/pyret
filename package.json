@@ -55,6 +55,7 @@
     "react-dom": "^15.7.0",
     "redis": "^0.10.3",
     "request": "^2.88.2",
+    "request-filtering-agent": "^3.2.0",
     "requirejs": "2.1.14",
     "s-expression": "~2.2.0",
     "script-loader": "^0.7.2",

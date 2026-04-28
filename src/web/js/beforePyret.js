@@ -3,6 +3,27 @@
 var originalPageLoad = Date.now();
 console.log("originalPageLoad: ", originalPageLoad);
 
+// Transparently route browser fetches to allowlisted hosts through the
+// server-side proxy at /load-shareurl. Some school networks block
+// raw.githubusercontent.com directly; the proxy gives those users a working
+// path. Installed as early as possible so it catches every fetch caller:
+// makeUrlFile in drive.js, the url/url-file import prefetches in cpo-main.js,
+// and the Pyret runtime's F.fetch trove (via cross-fetch -> window.fetch).
+const SHAREURL_PROXY_HOSTS = new Set(['raw.githubusercontent.com']);
+const _origFetch = window.fetch.bind(window);
+window.fetch = function(input, init) {
+  const urlStr = (typeof input === 'string') ? input
+                 : (typeof Request !== 'undefined' && input instanceof Request) ? input.url
+                 : String(input);
+  try {
+    const u = new URL(urlStr, window.location.href);
+    if (SHAREURL_PROXY_HOSTS.has(u.hostname)) {
+      return _origFetch('/load-shareurl?url=' + encodeURIComponent(urlStr), init);
+    }
+  } catch (_) { /* not a parseable URL; fall through */ }
+  return _origFetch(input, init);
+};
+
 const isEmbedded = window.parent !== window;
 
 var shareAPI = makeShareAPI(process.env.CURRENT_PYRET_RELEASE);
