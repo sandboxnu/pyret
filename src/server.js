@@ -7,6 +7,18 @@ const { drive } = require("googleapis/build/src/apis/drive/index.js");
 
 var BACKREF_KEY = "originalProgram";
 
+// Limits for the streaming proxy. /downloadImg gets larger/looser caps because
+// images can legitimately be tens of MB; also we've seen e.g. Drive ?export=
+// take a while to get going. SHAREURL is intended to always be program
+// plaintext.
+// NOTE(joe + claude): really the timeout maybe should be on idleness at
+// startup/between bytes, not overall per completed request, but that's work to
+// plumb into `request`
+var IMAGE_PROXY_MAX_BYTES    = 20 * 1024 * 1024; // 20 MB
+var IMAGE_PROXY_TIMEOUT_MS   = 30 * 1000;        // 30 s
+var SHAREURL_PROXY_MAX_BYTES  = 1 * 1024 * 1024;  // 1 MB
+var SHAREURL_PROXY_TIMEOUT_MS = 10 * 1000;        // 10 s
+
 function start(config, onServerReady) {
   var defaultOpts = {
       PYRET: process.env.PYRET,
@@ -245,8 +257,8 @@ function start(config, onServerReady) {
       res: response,
       url: googleLink,
       allowedHosts: null,
-      maxBytes: 10000000,
-      timeoutMs: 15000,
+      maxBytes: IMAGE_PROXY_MAX_BYTES,
+      timeoutMs: IMAGE_PROXY_TIMEOUT_MS,
       contentTypeOk: function(ct) { return ct && ct.indexOf('image/') === 0; },
       onError: function(res, err) {
         res.status(400).send({ type: 'image-load-failure', error: 'Unable to load image ' + String(err) });
@@ -623,8 +635,8 @@ function start(config, onServerReady) {
       res: res,
       url: req.query.url,
       allowedHosts: function(h) { return SHAREURL_ALLOWED_HOSTS.has(h); },
-      maxBytes: 1000000,
-      timeoutMs: 10000,
+      maxBytes: SHAREURL_PROXY_MAX_BYTES,
+      timeoutMs: SHAREURL_PROXY_TIMEOUT_MS,
       contentTypeOk: null,
       onError: function(res, err) {
         res.status(502).send({ error: 'upstream-error' });
