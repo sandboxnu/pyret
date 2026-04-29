@@ -59,35 +59,44 @@ function _shareurlFetch(shouldProxy, fetchInput, fetchInit) {
 
 function _shareurlRace(fetchInput, fetchInit) {
   const proxyCtrl = new AbortController();
+  // NOTE(joe): The signal overwrite is technically not the right fetch()
+  // polyfill. If the caller elsewhere in the codebase provided a different
+  // signal (which in the fetch API is only for aborting as of April '26), that
+  // caller aborting through that signal won't cancel the proxy fetch.
+  // I'm OK letting that case slip through here in exchange for not having a
+  // bunch of extra event handler forwarding
   const proxyP = _origFetch(_shareurlProxyUrl(fetchInput),
     Object.assign({}, fetchInit, { signal: proxyCtrl.signal }));
-  const directP = _origFetch(fetchInput, fetchInit);
+  const directP = _origFetch(fetchInput, fetchInit).then(r => {
+    if (!_shareurlVerifyDirect(r)) throw new Error('direct request failed');
+    return r;
+  });
 
-  // shouldProxy is decided from direct's headers — a timeout flips us to
-  // true if direct hangs at the network level (no headers, no error).
+  // shouldProxy: false iff direct verified before the timeout, else true.
+  // Whether to proxy is decided solely on whether direct succeeds or not
   const shouldProxyPromise = Promise.race([
-    directP.then(r => !_shareurlVerifyDirect(r), () => true),
+    directP.then(() => false, () => true),
     new Promise(resolve => setTimeout(() => resolve(true), SHAREURL_DIRECT_TIMEOUT_MS)),
   ]);
 
-  // Caller's response: direct if its headers verify (and abort the proxy
-  // fetch to stop wasting server bandwidth); otherwise proxy. If proxy also
-  // fails, surface its error.
-  const responsePromise = new Promise((resolve, reject) => {
-    let gotSomeResponse = false;
-    directP.then(r => {
-      if (!gotSomeResponse && _shareurlVerifyDirect(r)) {
-        gotSomeResponse = true;
-        proxyCtrl.abort();
-        resolve(r);
-      }
-    }).catch(() => { /* wait for proxy to resolve or reject */ });
-    proxyP.then(r => {
-      if (!gotSomeResponse) { gotSomeResponse = true; resolve(r); }
-    }).catch(e => {
-      if (!gotSomeResponse) reject(e);
-    });
+  // Settlement-order check: if direct verifies before proxy returns, abort
+  // the in-flight proxy to stop wasting server bandwidth. We must NOT
+  // abort once proxy has already returned, since by then the caller is
+  // reading proxy's body and aborting would error its stream mid-read.
+  const directFinishedSuccessfullyAndFirstP = Promise.race([
+    directP.then(() => true, () => false),
+    proxyP.then(() => false, () => false),
+  ]);
+  directFinishedSuccessfullyAndFirstP.then(directFirst => {
+    if (directFirst) proxyCtrl.abort();
   });
+
+  // Caller's response: whichever of direct-verified or proxy fulfills
+  // first. If both fail, surface proxy's error (the more authoritative
+  // upstream — direct's may just be 'direct-not-verified').
+  const responsePromise = Promise.any([directP, proxyP]).catch(
+    aggErr => Promise.reject(aggErr.errors[1] || aggErr.errors[0])
+  );
 
   return { responsePromise, shouldProxyPromise };
 }
