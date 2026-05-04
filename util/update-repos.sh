@@ -38,10 +38,10 @@ cleanup() {
     echo "Merge conflict detected. To reproduce this state, run:"
     if [[ "$current_phase" == "pull" ]]; then
       echo "  git switch $current_branch"
-      echo "  git pull --no-ff $current_upstream"
+      echo "  git -c merge.directoryRenames=true pull --no-ff $current_upstream"
     elif [[ "$current_phase" == "merge" ]]; then
       echo "  git switch $start_branch"
-      echo "  git merge --no-ff $current_branch -m \"Merge branch '$current_branch'\""
+      echo "  git -c merge.directoryRenames=true merge --no-ff $current_branch -m \"Merge branch '$current_branch'\""
     fi
     echo ""
     echo "Aborting in-progress merge..."
@@ -80,7 +80,10 @@ for branch in "${(@k)repos}"; do
   before=$(git rev-parse HEAD)
 
   echo "==> Checking $branch ($upstream)"
-  git pull --no-ff "$upstream"
+  # directoryRenames=true auto-applies directory-rename detection rather than
+  # surfacing it as a conflict (e.g. new files at upstream root land under
+  # this branch's $branch/ subdirectory automatically).
+  git -c merge.directoryRenames=true pull --no-ff "$upstream"
 
   after=$(git rev-parse HEAD)
   updated+=("$branch")
@@ -93,7 +96,7 @@ echo "==> Merging updated branches: ${updated[*]}"
 for branch in "${updated[@]}"; do
   current_phase="merge"
   current_branch="$branch"
-  git merge --no-ff "$branch" -m "Merge branch '$branch'"
+  git -c merge.directoryRenames=true merge --no-ff "$branch" -m "Merge branch '$branch'"
 done
 
 echo ""
