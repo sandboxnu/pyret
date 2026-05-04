@@ -4,7 +4,6 @@
     { "import-type": "builtin", 'name': "charts-util" },
   ],
   nativeRequires: [
-    'pyret-base/js/js-numbers',
     'vegaMin',
     'canvas',
   ],
@@ -20,9 +19,10 @@
       'plot': "tany",
     }
   },
-  theModule: function (RUNTIME, NAMESPACE, uri, IMAGELIB, CHARTSUTILLIB, jsnums, vega, canvasLib) {
+  theModule: function (RUNTIME, NAMESPACE, uri, IMAGELIB, CHARTSUTILLIB, vega, canvasLib) {
     'use strict';
 
+    const jsnums = RUNTIME.jsnums;
     
     // Default Google Chart Colors for sequential series (Like Multi Bar Charts and Pie Charts) from 
     // https://stackoverflow.com/a/75264589
@@ -211,7 +211,8 @@
 
     const chartFontConfig = {
       signals: [
-        { name: 'fontSizeScale', value: 14 }
+        { name: 'fontSizeScale', value: 14 },
+        { name: 'titleText', value: '' },
       ],
       mark: {
         fontSize: { signal: 'fontSizeScale' }
@@ -299,7 +300,7 @@
         { name: 'collapseThreshold', update: `${collapseThreshold}` },
         {
           name: 'hoveredId',
-          value: 'null',
+          update: 'null',
           on: [
             {
               events: [
@@ -318,7 +319,8 @@
               update: 'null'
             },
           ]
-        }
+        },
+        { name: 'staggerXAxisLabels', update: false },
       );
 
       const dataTable = {
@@ -469,7 +471,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -915,7 +917,29 @@
           }
         }
       );
-    }      
+    }
+
+    function prepareAxisForOffsets(dir, axis, scales, data, signals) {
+      axis.encode = {
+        labels: {
+          name: `${dir}AxisLabels`,
+          update: {
+            dy: { scale: 'xAxisYOffsets', signal: 'datum.index' }
+          }
+        }
+      };
+      scales.push({
+        name: 'xAxisYOffsets',
+        type: 'ordinal',
+        domain: { data: 'xAxisLabelOffsets', field: 'index' },
+        range: { data: 'xAxisLabelOffsets', field: 'offset' },
+      });
+      data.push({
+        name: 'xAxisLabelOffsets',
+        values: []
+      });
+      signals.push({name: 'staggerXAxisLabels', value: false});
+    }
     
     function barChart(globalOptions, rawData) {
       // Variables and constants 
@@ -1003,6 +1027,9 @@
           grid: true, ticks: false, labels: false }
       ];
 
+      // TODO: change this to affect the horizontal axis even if it's a horizontal bar chart?
+      prepareAxisForOffsets(axesConfig.primary.dir, axes[0], scales, data, signals);
+      
       if (axis) {
         axes[1].values = axis.domainRaw;
         axes[1].encode = {
@@ -1032,7 +1059,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1121,7 +1148,7 @@
       const signals = [
         {
           name: 'hoveredSeries',
-          value: 'null',
+          update: 'null',
           on: [
             {
               events: [
@@ -1196,6 +1223,9 @@
       ];
       // set the axis with the ticks to have the title, so they don't overlap
       axes[isNotFullStacked ? 1 : 2].title = axisLabels[axesConfig.secondary.dir];
+
+      // TODO: change this to affect the horizontal axis even if it's a horizontal bar chart?
+      prepareAxisForOffsets(axesConfig.primary.dir, axes[0], scales, data, signals);
       
       if (axis) {
         axes[1].values = axis.domainRaw;
@@ -1320,7 +1350,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1392,7 +1422,8 @@
         { name: 'minValue',
           update: 'extent(pluck(data("table"), "minVal"))[0]' },
         { name: 'maxValue',
-          update: 'extent(pluck(data("table"), "maxVal"))[1]' }
+          update: 'extent(pluck(data("table"), "maxVal"))[1]' },
+        { name: 'staggerXAxisLabels', update: false },
       ];
       const outlierTooltip = `, 'bottom whisker': datum.lowWhisker, 'top whisker': datum.highWhisker`;
       const tooltip = `{
@@ -1596,7 +1627,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1613,11 +1644,15 @@
     }
 
     function histogram(globalOptions, rawData) {
-      const table = get(rawData, 'tab');
+      const values = RUNTIME.ffi.toArray(get(rawData, 'vals'));
       const binWidth = getNumOrDefault(get(rawData, 'bin-width'), undefined);
 
       const maxNumBins = getNumOrDefault(get(rawData, 'max-num-bins'), undefined);
 
+      const xMinValue = getNumOrDefault(globalOptions['x-min'], undefined);
+      const xMaxValue = getNumOrDefault(globalOptions['x-max'], undefined);
+      const yMinValue = getNumOrDefault(globalOptions['y-min'], undefined);
+      const yMaxValue = getNumOrDefault(globalOptions['y-max'], undefined);
       const title = globalOptions['title'];
       const width = globalOptions['width'];
       const height = globalOptions['height'];
@@ -1627,10 +1662,13 @@
       const data = [
         {
           name: 'rawTable',
-          values: table.map((row, i) => ({
-            label: row[0],
-            value: toFixnum(row[1]),
-            image: (row[2] && row[2].val && IMAGE.isImage(row[2].val)) ? imageToCanvas(row[2].val) : undefined,
+          values: values.map((v, i) => ({
+            label: get(v, 'label'),
+            value: toFixnum(get(v, 'value')),
+            image: cases(RUNTIME.ffi.isOption, 'Option', get(v, 'image'), {
+              none: () => undefined,
+              some: (opaqueImg) => imageToCanvas(opaqueImg.val)
+            }),
           })),
           transform: [
             {
@@ -1684,7 +1722,11 @@
       const signals = [
         { name: 'boxHeight', update: 'height / abs(domain("countScale")[0] - domain("countScale")[1])' },
         { name: 'showIndividualBoxes', update: 'boxHeight >= 5' },
-        { name: 'binWidth', update: `${binWidth ?? 0}` }
+        { name: 'binWidth', update: `${binWidth ?? 0}` },
+        { name: 'xMinValue', value: xMinValue },
+        { name: 'xMaxValue', value: xMaxValue },
+        { name: 'yMinValue', value: yMinValue },
+        { name: 'yMaxValue', value: yMaxValue },
       ];
 
       const rangeFormatStr = '"[" + trim(format(datum.bin0, "5~f")) + ", " + trim(format(datum.bin1, "5~f")) + "]"';
@@ -1753,7 +1795,8 @@
           type: 'linear',
           range: 'width',
           zero: false,
-          domain: { data: 'rawTable', fields: ['bin0', 'bin1'] }
+          domain: { data: 'rawTable', fields: ['bin0', 'bin1'] },
+          domainMin: { signal: 'xMinValue' }, domainMax: { signal: 'xMaxValue' }
         },
         {
           name: 'countScale',
@@ -1770,16 +1813,17 @@
         { orient: 'bottom', scale: 'binScale', zindex: 1, title: xAxisLabel,
           format: '5~r',
           values: (binWidth
-                   ? { signal: `sequence(range('binScale')[0], range('binScale')[1] + binWidth, binWidth)` }
+                   ? { signal: `sequence(floor(domain('binScale')[0] / binWidth) * binWidth, domain('binScale')[1] + binWidth, binWidth)` }
                    : undefined) },
         { orient: 'left', scale: 'countScale', grid: true, title: yAxisLabel }
       ];
       
-
+      prepareAxisForOffsets('x', axes[0], scales, data, signals);
+      
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1860,12 +1904,13 @@
       ];
       const signals = [
         { name: 'dotSize', value: pointSize },
-        { name: 'binSize', update: 'invert("binScale", dotSize)' },
+        { name: 'binSize', update: 'abs(dotSize * (domain("binScale")[1] - domain("binScale")[0]) / (range("binScale")[1] - range("binScale")[0]))' },
         { name: 'actualDotSize', update: 'scale("dotScale", 0) - scale("dotScale", 1)' },
         { name: 'headspace', value: '0.25' },
         { name: 'wrapMaxY', update: 'floor(domain("dotScale")[1] * (1 - headspace))' },
         { name: 'xMinValue', value: xMinValue },
         { name: 'xMaxValue', value: xMaxValue },
+        { name: 'staggerXAxisLabels', update: false },
       ];
       const scales = [
         {
@@ -1948,7 +1993,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -1968,6 +2013,7 @@
       const defaultColor = default_colors[0];
       const color = getColorOrDefault(get(rawData, 'color'), defaultColor);
       const legend = get(rawData, 'legend') || '';
+      const autosizeImage = isTrue(get(rawData, 'useImageSizes'));
 
       const points = RUNTIME.ffi.toArray(get(rawData, 'ps'));
 
@@ -1981,49 +2027,134 @@
 
 
 
+      const rawCounts = new Map();
       const fixedPoints = points.map((p) => ({
         label: get(p, 'label'),
-        count: toFixnum(get(p, 'count'))
+        category: get(p, 'category'),
+        value: 0, // PLACEHOLDER, updated below
+        count: rawCounts.get(get(p, 'category')),
+        image: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => imageToCanvas(opaqueImg.val)
+        }),
+        imageOffsetX: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => opaqueImg.val.getPinholeX() / opaqueImg.val.getWidth()
+        }),
+        imageOffsetY: cases(RUNTIME.ffi.isOption, 'Option', get(p, 'image'), {
+          none: () => undefined,
+          some: (opaqueImg) => opaqueImg.val.getPinholeY() / opaqueImg.val.getHeight()
+        }),
       }));
+      for (const p of fixedPoints) {
+        const countForCat = rawCounts.get(p.category) ?? 0;
+        p.value = countForCat;
+        rawCounts.set(p.category, countForCat + 1);
+      }
+      const counts = [...rawCounts.entries().map((kv) => ({ category: kv[0], count: kv[1] }))];
       const data = [
         {
-          name: 'bars',
-          values: fixedPoints
+          name: 'rawDotsData',
+          values: fixedPoints,
+          transform: [
+            { type: 'collect', sort: { field: 'category' } },
+            { type: 'extent', field: 'value', signal: 'rawDotExtent' }
+          ]
         },
         {
-          name: 'dotsData',
-          values: fixedPoints.flatMap((p) =>
-            Array.from({length: p.count}).map((_, i) => ({ label: p.label, value: i }))
-          )
+          name: `dotsData`,
+          source: `rawDotsData`,
+          transform: [ { type: 'filter', expr: '!isValid(datum.image)' } ]
         },
+        {
+          name: `imagesData`,
+          source: `rawDotsData`,
+          transform: [ { type: 'filter', expr: 'isValid(datum.image)' } ]
+        },
+        {
+          name: 'bars',
+          values: counts
+        }
       ];
       const signals = [
-        { name: 'dotSize', update: "scale('secondary', 1) - scale('secondary', 0)" },
+        { name: 'dotSize', update: "0.8 * abs(scale('secondary', 1) - scale('secondary', 0))" },
+        { name: 'staggerXAxisLabels', update: false },
+        { name: 'hoveredCategory', update: false,
+          on: [
+            {
+              events: [
+                { markname: 'blocks', type: 'mouseover' },
+                { markname: 'DotMarks', type: 'mouseover' },
+                { markname: 'ImageMarks', type: 'mouseover' }
+              ],
+              force: true,
+              update: 'datum.category'
+            },
+            {
+              events: [
+                { markname: 'blocks', type: 'mouseout' },
+                { markname: 'DotMarks', type: 'mouseout' },
+                { markname: 'ImageMarks', type: 'mouseout' }
+              ],
+              force: true,
+              update: 'null'
+            },            
+          ]},
       ];
       const scales = [
         {
           name: 'primary',
           type: 'band',
           range: 'width',
-          domain: { data: 'bars', field: 'label' }
+          domain: { data: 'rawDotsData', field: 'category' }
         },
         {
           name: 'secondary',
           range: 'height',
           ...yAxisType,
           nice: true, zero: true,
-          domain: { data: 'bars', field: 'count' }
-        }
+          domain: { signal: '[0, rawDotExtent[1] + 1]' },
+        },
       ];
       const axes = [
         { orient: 'bottom', scale: 'primary', zindex: 1, title: xAxisLabel },
         { orient: 'bottom', scale: 'primary', zindex: 0, grid: true, ticks: false, labels: false },
         { orient: 'left', scale: 'secondary', grid: true, ticks: true, labels: true, title: yAxisLabel, zindex: 1 }
       ];
+      const markTooltip = [
+        {
+          test: '!!datum.label',
+          signal: `{ title: datum.label }`
+        },
+        { signal: `{ title: datum.category, Count: datum.count }` }
+      ];
       const marks = [
         {
+          type: 'rect',
+          name: 'blocks',
+          from: { data: 'bars' },
+          encode: {
+            enter: {
+              x: { scale: 'primary', field: 'category', offset: { scale: 'primary', band: 0.25 } },
+              x2: { scale: 'primary', field: 'category', offset: { scale: 'primary', band: 0.75 } },
+              y: { scale: 'secondary', value: 0 },
+              y2: { scale: 'secondary', field: 'count' },
+              tooltip: { signal: `{ title: datum.category, Count: datum.count }`},
+              stroke: { value: 'gray' },
+              strokeWidth: { value: 2 },
+              fill: { value: 'transparent' },
+            },
+            update: {
+              opacity: { signal: 'hoveredCategory == datum.category ? 1 : 0' },
+            },
+            hover: {
+              opacity: { value: 1 }
+            }
+          }
+        },
+        {
           type: 'symbol',
-          name: 'dots',
+          name: 'DotMarks',
           from: { data: 'dotsData' },
           encode: {
             enter: {
@@ -2032,34 +2163,33 @@
               fill: { value: color },
               stroke: { value: 'white' },
               strokeWidth: { value: 0.25 },
-              tooltip: { signal: '{ title: datum.label, Value: datum.value }' },
-              xc: { scale: 'primary', field: 'label', offset: { scale: 'primary', band: 0.5 } },
-              yc: { scale: 'secondary', field: 'value', offset: { signal: '0.5 * dotSize' } },
-              size: { signal: '0.8 * 0.8 * dotSize * dotSize' },
+              tooltip: markTooltip,
+              xc: { scale: 'primary', field: 'category', offset: { scale: 'primary', band: 0.5 } },
+              yc: { scale: 'secondary', field: 'value',
+                    offset: { signal: "scale('secondary', 0.5) - scale('secondary', 0)" } },
+              size: { signal: 'dotSize * dotSize' },
             }
           }
         },
         {
-          type: 'rect',
-          name: 'blocks',
-          from: { data: 'bars' },
+          type: 'image',
+          from: { data: `imagesData` },
+          name: `ImageMarks`,
           encode: {
             enter: {
-              x: { scale: 'primary', field: 'label', offset: { scale: 'primary', band: 0.25 } },
-              x2: { scale: 'primary', field: 'label', offset: { scale: 'primary', band: 0.75 } },
-              y: { scale: 'secondary', value: 0 },
-              y2: { scale: 'secondary', field: 'count' },
-              tooltip: { signal: `{ title: datum.label, Count: datum.count }`},
-              stroke: { value: 'gray' },
-              strokeWidth: { value: 2 },
-              fill: { value: 'transparent' },
+              width: autosizeImage ? undefined : { signal: "dotSize" },
+              height: autosizeImage ? undefined : { signal: "dotSize" },
+              image: { field: 'image' },
+              tooltip: markTooltip,
             },
             update: {
-              opacity: { value: 0 },
+              xc: { scale: 'primary', field: 'category',
+                    offset: { scale: 'primary', band: 0.5 } },
+              yc: { scale: 'secondary', signal: 'datum.value',
+                    offset: { signal: "scale('secondary', 0.5) - scale('secondary', 0)" } },
+              align: autosizeImage ? { value: 'center' } : undefined,
+              baseline: autosizeImage ? { value: 'middle' } : undefined
             },
-            hover: {
-              opacity: { value: 1 }
-            }
           }
         },
       ];
@@ -2067,7 +2197,7 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
@@ -2439,11 +2569,7 @@
             y: { scale: `yscale`, field: 'y', offset: { signal: `${imageScaleFactorY} * datum.imageOffsetY` } },
             stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${color}'` },
             strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 1 : 0)` },
-            zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
           },
-          hover: {
-            zindex: { value: 1 }
-          }
         }
       });
       if (pointshapeType === 'circle') {
@@ -2463,11 +2589,9 @@
               y: { scale: `yscale`, field: 'y' },
               fill: { value: color },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${color}'` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
             },
             hover: {
               stroke: { value: color },
-              zindex: { value: 1 }
             }
           }
         });
@@ -2563,11 +2687,9 @@
             x: { scale: `xscale`, field: 'x' },
             y: { scale: `yscale`, field: 'y' },
             strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 2 : 1) * ${lineWidth}` },
-            zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
           },
           hover: {
             strokeWidth: { value: 2 * lineWidth },
-            zindex: { value: 1 }
           }
         }
       });
@@ -2681,11 +2803,7 @@
               y: { scale: `yscale`, field: 'y', offset: { signal: `${-pointSize} * datum.imageOffsetY` } },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${dataColor}'` },
               strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 1 : 0)` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
             },
-            hover: {
-              zindex: { value: 1 }
-            }
           }
         },
         {
@@ -2704,11 +2822,7 @@
               yc: { scale: `yscale`, field: 'y' },
               fill: { value: dataColor },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${dataColor}'` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
             },
-            hover: {
-              zindex: { value: 1 }
-            }
           }
         },
         {
@@ -2742,10 +2856,6 @@
               xc: { scale: `xscale`, field: 'x' },
               yc: { scale: `yscale`, field: 'yprime' },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${intervalColor}'` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
-            },
-            hover: {
-              zindex: { value: 1 }
             }
           }
         },
@@ -2841,10 +2951,6 @@
               yc: { scale: `yscale`, field: 'y' },
               stroke: { signal: `hoveredLegend === '${prefix}' ? 'white' : '${pointColor}'` },
               strokeWidth: { signal: `(hoveredLegend === '${prefix}' ? 1 : 0)` },
-              zindex: { signal: `hoveredLegend === '${prefix}' ? 1 : null` }
-            },
-            hover: {
-              zindex: { value: 1 }
             }
           }
         }
@@ -2923,6 +3029,7 @@
       const gridlines = getGridlines({}, globalOptions);
       const scales = charts.flatMap((c) => c.scales || []);
       const signals = charts.flatMap((c) => c.signals || []);
+      const data = charts.flatMap((c) => c.data || []);
       // NOTE: must compute these before updating the scales array...or else the new scales will
       // become part of the signal definition, which is incorrect!
       signals.push(
@@ -2967,6 +3074,8 @@
         },
       ];
 
+      prepareAxisForOffsets('x', axes[2], scales, data, signals);
+      
       const marks = [
         {
           type: 'group',
@@ -3025,7 +3134,7 @@
         });
         signals.push({
           name: 'hoveredLegend',
-          value: 'null',
+          update: 'null',
           on: [
             {
               events: [
@@ -3048,7 +3157,7 @@
       } else {
         signals.push({
           name: 'hoveredLegend',
-          value: 'null'
+          update: 'null'
         });
       }
 
@@ -3122,13 +3231,13 @@
       return {
         "$schema": "https://vega.github.io/schema/vega/v6.json",
         description: title,
-        title: title ? { text: title } : '',
+        title: title && { text: { signal: 'titleText' } },
         width,
         height,
         padding: 0,
         autosize: 'fit',
         background,
-        data: charts.flatMap((c) => c.data || []),
+        data,
         signals,
         scales,
         axes,
@@ -3251,9 +3360,10 @@
       // NOTE(Ben): this externalContext *should* be unnecessary, but for some reason,
       // vega-as-bundled-in-a-jarr doesn't seem to notice NodeCanvas correctly
       const externalContext = canvas.getContext('2d');
-      view.width(width).height(height).resize()
+      view.width(width).height(height).signal('titleText', 'spacer').resize()
       return view.runAsync()
-        .then(() => view.toCanvas(1, { externalContext }))
+        .then(() => rebuildAxisLabels(view))
+        .then(() => view.signal('titleText', view.description()).toCanvas(1, { externalContext }))
         .then(() => externalContext.getImageData(0, 0, width, height));
     }
 
@@ -3279,6 +3389,7 @@
         return canvasLib && canvasLib.Canvas && v instanceof canvasLib.Canvas;
       }
       const isVegaString = isTrue(globalOptions['vega']);
+      const staggerXAxisLabels = isTrue(globalOptions['x-axis-stagger-labels']);
       return RUNTIME.pauseStack(restarter => {
         try {
           if (isVegaString) {
@@ -3287,6 +3398,7 @@
           const width = toFixnum(globalOptions['width']);
           const height = toFixnum(globalOptions['height']);
           const view = new vega.View(vega.parse(processed));
+          view.signal('staggerXAxisLabels', staggerXAxisLabels);
           return renderToCanvas(view, width, height).then((data) => imageDataReturn(data, restarter));
         } catch(e) {
           return restarter.error(e);
@@ -3294,6 +3406,18 @@
       });
     }
 
+    function rebuildAxisLabels(view) {
+      // const { data: { xAxisLabels } } = view.getState({data: (name) => name === "xAxisLabels"});
+      try {
+        if (!view.signal('staggerXAxisLabels')) return view;
+        const xAxisLabels = view.data("xAxisLabels");
+        const offsets = xAxisLabels.map((mark, i) => ({ index: mark.datum.index, offset: (i % 2) * 25 }));
+        return view.data('xAxisLabelOffsets', offsets).runAsync();
+      } catch(e) {
+        return view;
+      }
+    }
+    
     function renderInteractiveChart(processed, globalOptions, rawData) {
       return RUNTIME.pauseStack(restarter => {
         const root = $('<div/>');
@@ -3323,13 +3447,18 @@
             return ans;
           }
         });
+        const staggerXAxisLabels = isTrue(globalOptions['x-axis-stagger-labels']);
         const view = new vega.View(vega.parse(processed), {
           container: chart[0],
           renderer: 'svg',
           hover: true,
           tooltip: vegaTooltipHandler.call
         });
-        view.width(width).height(height).resize();
+        view.width(width)
+          .height(height)
+          .signal('staggerXAxisLabels', staggerXAxisLabels)
+          .signal('titleText', view.description())
+          .resize();
 
         var tmp = processed;
         tmp.view = view;
@@ -3347,6 +3476,7 @@
         const result = tmp;
         try {
           view.runAsync()
+            .then(() => rebuildAxisLabels(view))
             .then(() => {
               if (processed.addControls) {
                 processed.addControls(view, overlay);
@@ -3416,7 +3546,6 @@
             return RUNTIME.safeCall(() => f(globalOptions, rawData), (chart) => {
               return renderInteractiveChart(chart, globalOptions, rawData);
             }, 'render-interactive-chart');
-            return renderInteractiveChart(f(globalOptions, rawData), globalOptions, rawData);
           } else {
             return RUNTIME.ffi.throwMessageException('Cannot display interactive charts headlessly');
           }
