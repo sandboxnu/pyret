@@ -17,6 +17,9 @@ typeset -A repos=(
 set -e
 
 start_branch=$(git rev-parse --abbrev-ref HEAD)
+# Remote that tracks the monorepo's integration branches (e.g. "origin").
+# Used to fetch missing subrepo integration branches with proper history.
+monorepo_remote=$(git config "branch.${start_branch}.remote" 2>/dev/null) || monorepo_remote="origin"
 updated=()
 
 # Track current operation so cleanup can print reproduction commands.
@@ -57,9 +60,14 @@ for branch in "${(@k)repos}"; do
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git switch "$branch"
   else
-    echo "==> Branch '$branch' missing locally; fetching from $upstream"
-    git fetch "$upstream"
-    git switch -c "$branch" FETCH_HEAD
+    echo "==> Branch '$branch' missing locally; fetching from $monorepo_remote"
+    if ! git fetch "$monorepo_remote" "$branch:$branch"; then
+      echo "ERROR: '$branch' not found on $monorepo_remote." >&2
+      echo "The integration branch must exist on $monorepo_remote (where $start_branch is hosted)," >&2
+      echo "since merging requires shared history with $start_branch." >&2
+      exit 1
+    fi
+    git switch "$branch"
   fi
   before=$(git rev-parse HEAD)
 
