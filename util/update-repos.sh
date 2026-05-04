@@ -60,14 +60,22 @@ for branch in "${(@k)repos}"; do
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git switch "$branch"
   else
-    echo "==> Branch '$branch' missing locally; fetching from $monorepo_remote"
-    if ! git fetch "$monorepo_remote" "$branch:$branch"; then
-      echo "ERROR: '$branch' not found on $monorepo_remote." >&2
-      echo "The integration branch must exist on $monorepo_remote (where $start_branch is hosted)," >&2
-      echo "since merging requires shared history with $start_branch." >&2
+    # Look for a cached remote-tracking ref carrying the integration history.
+    remote_ref=""
+    for candidate in "refs/remotes/${monorepo_remote}/${branch}" "refs/remotes/origin/${branch}"; do
+      if git show-ref --verify --quiet "$candidate"; then
+        remote_ref="$candidate"
+        break
+      fi
+    done
+    if [[ -n "$remote_ref" ]]; then
+      echo "==> Branch '$branch' missing locally; creating from $remote_ref"
+      git switch -c "$branch" "$remote_ref"
+    else
+      echo "ERROR: '$branch' not found locally or as a remote-tracking ref." >&2
+      echo "The integration branch must exist somewhere with shared history with $start_branch." >&2
       exit 1
     fi
-    git switch "$branch"
   fi
   before=$(git rev-parse HEAD)
 
