@@ -62,7 +62,11 @@ for branch in "${(@k)repos}"; do
   else
     # Look for a cached remote-tracking ref carrying the integration history.
     remote_ref=""
-    for candidate in "refs/remotes/${monorepo_remote}/${branch}" "refs/remotes/origin/${branch}"; do
+    candidates=("refs/remotes/${monorepo_remote}/${branch}")
+    if [[ "$monorepo_remote" != "origin" ]]; then
+      candidates+=("refs/remotes/origin/${branch}")
+    fi
+    for candidate in "${candidates[@]}"; do
       if git show-ref --verify --quiet "$candidate"; then
         remote_ref="$candidate"
         break
@@ -86,7 +90,9 @@ for branch in "${(@k)repos}"; do
   git -c merge.directoryRenames=true pull --no-ff "$upstream"
 
   after=$(git rev-parse HEAD)
-  updated+=("$branch")
+  if [[ "$before" != "$after" ]]; then
+    updated+=("$branch")
+  fi
 done
 
 git switch "$start_branch"
