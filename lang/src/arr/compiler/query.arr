@@ -12,65 +12,31 @@ import render-error-display as RED
 import file("ast-util.arr") as AU
 import file("compile-structs.arr") as CS
 
-# TODO: debug / figure out where exactly we have to check locations
-fun find-name-key-by-srcloc(resolved :: A.Program, srcloc :: A.Loc) -> Option<String> block:
-  var result-mangled-name = none
-  visitor = A.default-iter-visitor.{
-    # Use sites: s-id(use-l, atom/global) — match on the outer l, return inner key
-    method s-id(self, l, id):
-      if l == srcloc block:
-        result-mangled-name := some(id.key())
-        false
-      else:
-        true
-      end
-    end,
-    method s-id-var(self, l, id):
-      if l == srcloc block:
-        result-mangled-name := some(id.key())
-        false
-      else:
-        true
-      end
-    end,
-    method s-id-letrec(self, l, id, safe):
-      if l == srcloc block:
-        result-mangled-name := some(id.key())
-        false
-      else:
-        true
-      end
-    end,
-    # Binding sites: s-atom/s-global appear directly with bind-l — only match
-    # if the user clicked exactly on a binding site (rare but possible)
-    method s-atom(self, l, base, serial):
-      if l == srcloc block:
-        result-mangled-name := some(A.s-atom(l, base, serial).key())
-        false
-      else:
-        true
-      end
-    end,
-    method s-global(self, l, s):
-      if l == srcloc block:
-        result-mangled-name := some(A.s-global(l, s).key())
-        false
-      else:
-        true
-      end
-    end,
-    method a-name(self, l, id):
-      if l == srcloc block:
-        result-mangled-name := some(id.key())
-        false
-      else:
-        true
+fun find-name-key-by-srcloc(resolved :: A.Program, target :: A.Loc, expected-name :: String) -> Option<String> block:
+  doc: ```
+       Find the key of the post-resolution Name at target, the exact srcloc of
+       an identifier in the surface AST. Resolved atoms/globals carry no
+       srclocs, so we track the innermost enclosing node's loc during the
+       traversal and take the name whose enclosing loc most tightly contains
+       target. The enclosing loc is often wider than the name itself (e.g. a
+       bind's loc spans `x :: Number`), and several names can share one
+       enclosing node (e.g. `newtype Foo as FooT`, type parameters), so
+       candidates must also match the identifier text the user selected.
+       ```
+  var best-key = none
+  var best-span = 0
+  visitor = A.loc-tracking-iter-visitor(lam(name, enclosing) block:
+    when enclosing.same-file(target) and enclosing.contains(target) and (name.toname() == expected-name):
+      span = enclosing.end-char - enclosing.start-char
+      when is-none(best-key) or (span < best-span) block:
+        best-key := some(name.key())
+        best-span := span
       end
     end
-  }
-
+    true
+  end)
   resolved.visit(visitor)
-  result-mangled-name
+  best-key
 end
 
 fun find-name-at(prog :: A.Program, line :: Number, col :: Number) -> Option<A.Name> block:
@@ -125,7 +91,8 @@ fun jump-to-def(cache-manager, uri :: String, line :: Number, col :: Number) -> 
           cases(Option) find-name-at(ast, line, col):
             | none => E.left("Did not select a name")
             | some(name) =>
-              cases(Option) find-name-key-by-srcloc(named-result.ast, name.l):
+              expected = if A.is-s-name(name): name.toname() else: name.id.toname() end
+              cases(Option) find-name-key-by-srcloc(named-result.ast, name.l, expected):
                 | none => E.left("Post-resolution name not found")
                 | some(key) =>
                   {qual; bindings} = if A.is-s-name(name):
@@ -162,7 +129,8 @@ fun hover(cache-manager, uri :: String, line :: Number, col :: Number) -> E.Eith
           cases(Option) find-name-at(ast, line, col):
             | none => E.left("Did not select a name")
             | some(name) =>
-              cases(Option) find-name-key-by-srcloc(named-result.ast, name.l):
+              expected = if A.is-s-name(name): name.toname() else: name.id.toname() end
+              cases(Option) find-name-key-by-srcloc(named-result.ast, name.l, expected):
                 | none => E.left("Post-resolution name not found")
                 | some(key) =>
                   cases(Option) named-result.env.bindings.get-now(key):

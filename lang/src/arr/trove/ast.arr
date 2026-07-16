@@ -125,7 +125,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "name#" + self.s end
 
-  | s-global(l :: Loc, s :: String) with:
+  | s-global(s :: String) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): self.s end,
     method tosource(self): PP.str(self.s) end,
@@ -133,7 +133,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "global#" + self.s end
 
-  | s-module-global(l :: Loc, s :: String) with:
+  | s-module-global(s :: String) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): "$module$" + self.s end,
     method tosource(self): PP.str(self.s) end,
@@ -141,7 +141,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "mglobal#" + self.s end
 
-  | s-type-global(l :: Loc, s :: String) with:
+  | s-type-global(s :: String) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): "$type$" + self.s end,
     method tosource(self): PP.str(self.s) end,
@@ -149,7 +149,7 @@ data Name:
     method toname(self): self.s end,
     method key(self): "tglobal#" + self.s end
     
-  | s-atom(l :: Loc, base :: String, serial :: Number) with:
+  | s-atom(base :: String, serial :: Number) with:
     method to-compiled-source(self): PP.str(self.to-compiled()) end,
     method to-compiled(self): self.base + tostring(self.serial) end,
     method tosource(self): PP.str(self.toname()) end,
@@ -169,9 +169,9 @@ end
 
 fun MakeName(start):
   var count = start
-  fun atom(l :: Loc, base :: String) block:
+  fun atom(base :: String) block:
     count := 1 + count
-    s-atom(l, base, count)
+    s-atom(base, count)
   end
   {
     reset: lam(): count := start end,
@@ -1899,20 +1899,20 @@ default-map-visitor = {
     s-name(l, s)
   end,
 
-  method s-type-global(self, l, s):
-    s-type-global(l, s)
+  method s-type-global(self, s):
+    s-type-global(s)
   end,
 
-  method s-module-global(self, l, s):
-    s-module-global(l, s)
+  method s-module-global(self, s):
+    s-module-global(s)
   end,
 
-  method s-global(self, l, s):
-    s-global(l, s)
+  method s-global(self, s):
+    s-global(s)
   end,
 
-  method s-atom(self, l, base, serial):
-    s-atom(l, base, serial)
+  method s-atom(self, base, serial):
+    s-atom(base, serial)
   end,
 
   method s-star(self, l, hidden):
@@ -2525,16 +2525,16 @@ default-iter-visitor = {
   method s-name(self, l, s):
     true
   end,
-  method s-global(self, l, s):
+  method s-global(self, s):
     true
   end,
-  method s-type-global(self, l, s):
+  method s-type-global(self, s):
     true
   end,
-  method s-module-global(self, l, s):
+  method s-module-global(self, s):
     true
   end,
-  method s-atom(self, l, base, serial):
+  method s-atom(self, base, serial):
     true
   end,
 
@@ -3129,6 +3129,959 @@ default-iter-visitor = {
   end
 }
 
+fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
+  doc: ```
+       Like default-iter-visitor, but tracks the srcloc of the innermost
+       enclosing AST node during traversal. Post-resolution Names (atoms and
+       globals) carry no srclocs, so this recovers an approximate location
+       for them: on-name is called with every Name reached and the most
+       specific srcloc in effect at that point (for s-name/s-underscore,
+       their own loc). Returning false from on-name stops the traversal,
+       like any other iter-visitor method.
+       ```
+  var current-loc = dummy-loc
+  fun with-loc(l, visit-children) block:
+    old-loc = current-loc
+    current-loc := l
+    result = visit-children()
+    current-loc := old-loc
+    result
+  end
+  {
+  method option(self, opt):
+    cases(Option) opt:
+      | none => true
+      | some(v) => v.visit(self)
+    end
+  end,
+
+  method s-underscore(self, l): on-name(s-underscore(l), l) end,
+  method s-name(self, l, s): on-name(s-name(l, s), l) end,
+  method s-global(self, s): on-name(s-global(s), current-loc) end,
+  method s-type-global(self, s): on-name(s-type-global(s), current-loc) end,
+  method s-module-global(self, s): on-name(s-module-global(s), current-loc) end,
+  method s-atom(self, base, serial): on-name(s-atom(base, serial), current-loc) end,
+
+  method s-star(self, l, hidden):
+    with-loc(l, lam():
+        hidden.all(_.visit(self))
+    end)
+  end,
+  method s-module-ref(self, l, path, as-name):
+    with-loc(l, lam():
+        path.all(_.visit(self)) and self.option(as-name)
+    end)
+  end,
+  method s-local-ref(self, l, name, as-name):
+    with-loc(l, lam():
+        name.visit(self) and as-name.visit(self)
+    end)
+  end,
+  method s-remote-ref(self, l, uri, name, as-name):
+    with-loc(l, lam():
+        name.visit(self) and as-name.visit(self)
+    end)
+  end,
+
+  method s-defined-module(self, name, val, uri):
+    val.visit(self)
+  end,
+  method s-defined-value(self, name, val):
+    val.visit(self)
+  end,
+  method s-defined-var(self, name, id):
+    id.visit(self)
+  end,
+  method s-defined-type(self, name, typ):
+    typ.visit(self)
+  end,
+
+  method s-module(self, l, answer, dm, dv, dt, checks):
+    with-loc(l, lam():
+        answer.visit(self) and lists.all(_.visit(self), dm) and lists.all(_.visit(self), dv) and lists.all(_.visit(self), dt) and checks.visit(self)
+    end)
+  end,
+
+  method s-program(self, l, _use, _provide, provided-types, provides, imports, body):
+    with-loc(l, lam():
+        self.option(_use)
+        and _provide.visit(self)
+        and provided-types.visit(self)
+        and lists.all(_.visit(self), provides)
+        and lists.all(_.visit(self), imports)
+        and body.visit(self)
+    end)
+  end,
+
+  method s-use(self, l, name, import-type):
+    with-loc(l, lam():
+        name.visit(self) and import-type.visit(self)
+    end)
+  end,
+
+  method s-import(self, l, import-type, name):
+    with-loc(l, lam():
+        import-type.visit(self) and name.visit(self)
+    end)
+  end,
+  method s-include(self, l, import-type):
+    with-loc(l, lam():
+        import-type.visit(self)
+    end)
+  end,
+
+  method s-include-from(self, l, mod, specs):
+    with-loc(l, lam():
+        mod.all(_.visit(self)) and specs.all(_.visit(self))
+    end)
+  end,
+  method s-include-name(self, l, name-spec):
+    with-loc(l, lam():
+        name-spec.visit(self)
+    end)
+  end,
+  method s-include-data(self, l, name-spec, hidden):
+    with-loc(l, lam():
+        name-spec.visit(self) and hidden.all(_.visit(self))
+    end)
+  end,
+  method s-include-type(self, l, name-spec):
+    with-loc(l, lam():
+        name-spec.visit(self)
+    end)
+  end,
+  method s-include-module(self, l, name-spec):
+    with-loc(l, lam():
+        name-spec.visit(self)
+    end)
+  end,
+
+  method s-const-import(self, l, mod):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-special-import(self, l, kind, args):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-import-types(self, l, import-type, name, types):
+    with-loc(l, lam():
+        name.visit(self) and types.visit(self)
+    end)
+  end,
+  method s-import-fields(self, l, fields, import-type):
+    with-loc(l, lam():
+        all(_.visit(self), fields)
+    end)
+  end,
+  method s-provide(self, l, expr):
+    with-loc(l, lam():
+        expr.visit(self)
+    end)
+  end,
+  method s-provide-all(self, l):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-provide-none(self, l):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-provide-types(self, l, anns):
+    with-loc(l, lam():
+        all(_.visit(self), anns)
+    end)
+  end,
+  method s-provide-types-all(self, l):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-provide-types-none(self, l):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-provide-block(self, l, path, specs):
+    with-loc(l, lam():
+        path.all(_.visit(self)) and specs.all(_.visit(self))
+    end)
+  end,
+
+  method s-provide-name(self, l, name-spec):
+    with-loc(l, lam():
+        name-spec.visit(self)
+    end)
+  end,
+  method s-provide-data(self, l, name-spec, hidden):
+    with-loc(l, lam():
+        name-spec.visit(self) and hidden.all(_.visit(self))
+    end)
+  end,
+  method s-provide-type(self, l, name-spec):
+    with-loc(l, lam():
+        name-spec.visit(self)
+    end)
+  end,
+  method s-provide-module(self, l, name-spec):
+    with-loc(l, lam():
+        name-spec.visit(self)
+    end)
+  end,
+
+  method s-template(self, l):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+
+  method s-bind(self, l, shadows, name, ann):
+    with-loc(l, lam():
+        name.visit(self) and ann.visit(self)
+    end)
+  end,
+
+  method s-tuple-bind(self, l, fields, as-name):
+    with-loc(l, lam():
+        all(_.visit(self), fields) and self.option(as-name)
+    end)
+  end,
+
+  method s-var-bind(self, l, bind, expr):
+    with-loc(l, lam():
+        bind.visit(self) and expr.visit(self)
+    end)
+  end,
+  method s-let-bind(self, l, bind, expr):
+    with-loc(l, lam():
+        bind.visit(self) and expr.visit(self)
+    end)
+  end,
+
+  method s-type-bind(self, l, name, params, ann):
+    with-loc(l, lam():
+        name.visit(self) and ann.visit(self) and all(_.visit(self), params)
+    end)
+  end,
+
+  method s-newtype-bind(self, l, name, namet):
+    with-loc(l, lam():
+        name.visit(self) and namet.visit(self)
+    end)
+  end,
+
+  method s-type-let-expr(self, l, binds, body, blocky):
+    with-loc(l, lam():
+        all(_.visit(self), binds) and body.visit(self)
+    end)
+  end,
+
+  method s-let-expr(self, l, binds, body, blocky):
+    with-loc(l, lam():
+        all(_.visit(self), binds) and body.visit(self)
+    end)
+  end,
+
+  method s-letrec-bind(self, l, bind, expr):
+    with-loc(l, lam():
+        bind.visit(self) and expr.visit(self)
+    end)
+  end,
+
+  method s-letrec(self, l, binds, body, blocky):
+    with-loc(l, lam():
+        all(_.visit(self), binds) and body.visit(self)
+    end)
+  end,
+
+  method s-hint-exp(self, l :: Loc, hints :: List<Hint>, exp :: Expr):
+    with-loc(l, lam():
+        exp.visit(self)
+    end)
+  end,
+
+  method s-instantiate(self, l :: Loc, expr :: Expr, params :: List<Ann>):
+    with-loc(l, lam():
+        expr.visit(self) and all(_.visit(self), params)
+    end)
+  end,
+
+  method s-block(self, l, stmts):
+    with-loc(l, lam():
+        all(_.visit(self), stmts)
+    end)
+  end,
+
+  method s-user-block(self, l :: Loc, body :: Expr):
+    with-loc(l, lam():
+        body.visit(self)
+    end)
+  end,
+
+  method s-fun(self, l, name, params, args, ann, doc, body, _check-loc, _check, blocky):
+    with-loc(l, lam():
+        all(_.visit(self), params)
+        and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
+    end)
+  end,
+
+  method s-type(self, l :: Loc, name :: Name, params :: List<Name>, ann :: Ann):
+    with-loc(l, lam():
+        name.visit(self) and ann.visit(self) and all(_.visit(self), params)
+    end)
+  end,
+
+  method s-newtype(self, l :: Loc, name :: Name, namet :: Name):
+    with-loc(l, lam():
+        name.visit(self) and namet.visit(self)
+    end)
+  end,
+
+  method s-var(self, l :: Loc, name :: Bind, value :: Expr):
+    with-loc(l, lam():
+        name.visit(self) and value.visit(self)
+    end)
+  end,
+
+  method s-rec(self, l :: Loc, name :: Bind, value :: Expr):
+    with-loc(l, lam():
+        name.visit(self) and value.visit(self)
+    end)
+  end,
+
+  method s-let(self, l :: Loc, name :: Bind, value :: Expr, keyword-val :: Boolean):
+    with-loc(l, lam():
+        name.visit(self) and value.visit(self)
+    end)
+  end,
+
+  method s-ref(self, l :: Loc, ann :: Option<Ann>):
+    with-loc(l, lam():
+        self.option(ann)
+    end)
+  end,
+
+  method s-when(self, l :: Loc, test :: Expr, block :: Expr, blocky :: Boolean):
+    with-loc(l, lam():
+        test.visit(self) and block.visit(self)
+    end)
+  end,
+
+  method s-contract(self, l :: Loc, name :: Name, params :: List<Name>, ann :: Ann):
+    with-loc(l, lam():
+        name.visit(self) and all(_.visit(self), params) and ann.visit(self)
+    end)
+  end,
+
+  method s-assign(self, l :: Loc, id :: Name, value :: Expr):
+    with-loc(l, lam():
+        id.visit(self) and value.visit(self)
+    end)
+  end,
+
+  method s-if-branch(self, l :: Loc, test :: Expr, body :: Expr):
+    with-loc(l, lam():
+        test.visit(self) and body.visit(self)
+    end)
+  end,
+
+  method s-if-pipe-branch(self, l :: Loc, test :: Expr, body :: Expr):
+    with-loc(l, lam():
+        test.visit(self) and body.visit(self)
+    end)
+  end,
+
+  method s-if(self, l :: Loc, branches :: List<IfBranch>, blocky :: Boolean):
+    with-loc(l, lam():
+        all(_.visit(self), branches)
+    end)
+  end,
+  method s-if-else(self, l :: Loc, branches :: List<IfBranch>, _else :: Expr, blocky :: Boolean):
+    with-loc(l, lam():
+        all(_.visit(self), branches) and _else.visit(self)
+    end)
+  end,
+
+  method s-if-pipe(self, l :: Loc, branches :: List<IfPipeBranch>, blocky :: Boolean):
+    with-loc(l, lam():
+        all(_.visit(self), branches)
+    end)
+  end,
+  method s-if-pipe-else(self, l :: Loc, branches :: List<IfPipeBranch>, _else :: Expr, blocky :: Boolean):
+    with-loc(l, lam():
+        all(_.visit(self), branches) and _else.visit(self)
+    end)
+  end,
+
+  method s-cases-bind(self, l :: Loc, typ :: CasesBindType, bind :: Bind):
+    with-loc(l, lam():
+        bind.visit(self)
+    end)
+  end,
+  method s-cases-branch(self, l :: Loc, pat-loc :: Loc, name :: String, args :: List<CasesBind>, body :: Expr):
+    with-loc(l, lam():
+        all(_.visit(self), args) and body.visit(self)
+    end)
+  end,
+
+  method s-singleton-cases-branch(self, l :: Loc, pat-loc :: Loc, name :: String, body :: Expr):
+    with-loc(l, lam():
+        body.visit(self)
+    end)
+  end,
+
+  method s-cases(self, l :: Loc, typ :: Ann, val :: Expr, branches :: List<CasesBranch>, blocky :: Boolean):
+    with-loc(l, lam():
+        typ.visit(self) and val.visit(self) and all(_.visit(self), branches)
+    end)
+  end,
+  method s-cases-else(self, l :: Loc, typ :: Ann, val :: Expr, branches :: List<CasesBranch>, _else :: Expr, blocky :: Boolean):
+    with-loc(l, lam():
+        typ.visit(self) and val.visit(self) and all(_.visit(self), branches) and _else.visit(self)
+    end)
+  end,
+
+  method s-op(self, l :: Loc, op-l :: Loc, op :: String, left :: Expr, right :: Expr):
+    with-loc(l, lam():
+        left.visit(self) and right.visit(self)
+    end)
+  end,
+
+  method s-check-test(self, l :: Loc, op :: CheckOp, refinement :: Option<Expr>, left :: Expr, right :: Option<Expr>, cause :: Option<Expr>):
+    with-loc(l, lam():
+        op.visit(self) and self.option(refinement) and left.visit(self) and self.option(right) and self.option(cause)
+    end)
+  end,
+
+  method s-op-is(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-is-roughly(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-is-not-roughly(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-is-op(self, l :: Loc, op :: String):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-is-not(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-is-not-op(self, l :: Loc, op :: String):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-satisfies(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-satisfies-not(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-raises(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-raises-other(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-raises-not(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-raises-satisfies(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+  method s-op-raises-violates(self, l :: Loc):
+    with-loc(l, lam():
+     true 
+    end)
+  end,
+
+
+  method s-check-expr(self, l :: Loc, expr :: Expr, ann :: Ann):
+    with-loc(l, lam():
+        expr.visit(self) and ann.visit(self)
+    end)
+  end,
+
+  method s-paren(self, l :: Loc, expr :: Expr):
+    with-loc(l, lam():
+        expr.visit(self)
+    end)
+  end,
+
+  method s-lam(
+      self,
+      l :: Loc,
+      name :: String,
+      params :: List<Name>,
+      args :: List<Bind>,
+      ann :: Ann,
+      doc :: String,
+      body :: Expr,
+      _check-loc :: Option<Loc>,
+      _check :: Option<Expr>,
+      blocky :: Boolean
+      ):
+    with-loc(l, lam():
+        all(_.visit(self), params)
+        and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
+    end)
+  end,
+  method s-method(
+      self,
+      l :: Loc,
+      name :: String,
+      params :: List<Name>,
+      args :: List<Bind>, # Value parameters
+      ann :: Ann, # return type
+      doc :: String,
+      body :: Expr,
+      _check-loc :: Option<Loc>,
+      _check :: Option<Expr>,
+      blocky :: Boolean
+      ):
+    with-loc(l, lam():
+        all(_.visit(self), params) and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
+    end)
+  end,
+  method s-extend(self, l :: Loc, supe :: Expr, fields :: List<Member>):
+    with-loc(l, lam():
+        supe.visit(self) and all(_.visit(self), fields)
+    end)
+  end,
+  method s-update(self, l :: Loc, supe :: Expr, fields :: List<Member>):
+    with-loc(l, lam():
+        supe.visit(self) and all(_.visit(self), fields)
+    end)
+  end,
+  method s-tuple(self, l :: Loc, fields :: List<Expr>):
+    with-loc(l, lam():
+        all(_.visit(self), fields)
+    end)
+  end,
+  method s-tuple-get(self, l :: Loc, tup :: Expr, index :: Number, index-loc :: Loc):
+    with-loc(l, lam():
+        tup.visit(self)
+    end)
+  end,
+  method s-obj(self, l :: Loc, fields :: List<Member>):
+    with-loc(l, lam():
+        all(_.visit(self), fields)
+    end)
+  end,
+  method s-array(self, l :: Loc, values :: List<Expr>):
+    with-loc(l, lam():
+        all(_.visit(self), values)
+    end)
+  end,
+  method s-construct(self, l :: Loc, mod :: ConstructModifier, constructor :: Expr, values :: List<Expr>):
+    with-loc(l, lam():
+        constructor.visit(self) and all(_.visit(self), values)
+    end)
+  end,
+  method s-reactor(self, l :: Loc, fields :: List<Member>):
+    with-loc(l, lam():
+        all(_.visit(self), fields)
+    end)
+  end,
+  method s-table(self, l :: Loc, headers :: List<FieldName>, rows :: List<TableRow>):
+    with-loc(l, lam():
+        all(_.visit(self), headers) and all(_.visit(self), rows)
+    end)
+  end,
+  method s-table-row(self, l :: Loc, elems :: List<Expr>):
+    with-loc(l, lam():
+        all(_.visit(self), elems)
+    end)
+  end,
+  method s-load-table(self, l :: Loc, headers :: List<FieldName>, spec :: List<LoadTableSpec>):
+    with-loc(l, lam():
+        all(_.visit(self), headers) and all(_.visit(self), spec)
+    end)
+  end,
+  method s-field-name(self, l :: Loc, name :: String, ann :: Ann):
+    with-loc(l, lam():
+        ann.visit(self)
+    end)
+  end,
+  method s-app(self, l :: Loc, _fun :: Expr, args :: List<Expr>):
+    with-loc(l, lam():
+        _fun.visit(self) and all(_.visit(self), args)
+    end)
+  end,
+  method s-prim-app(self, l :: Loc, _fun :: String, args :: List<Expr>, _):
+    with-loc(l, lam():
+        all(_.visit(self), args)
+    end)
+  end,
+  method s-prim-val(self, l :: Loc, name :: String):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-id(self, l :: Loc, id :: Name):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method s-id-var(self, l :: Loc, id :: Name):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method s-id-letrec(self, l :: Loc, id :: Name, safe :: Boolean):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method s-id-var-modref(self, l :: Loc, id :: Name, uri :: String, name :: String):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method s-id-modref(self, l :: Loc, id :: Name, uri :: String, name :: String):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method s-undefined(self, l :: Loc):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-srcloc(self, l, shadow loc):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-num(self, l :: Loc, n :: Number):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-frac(self, l :: Loc, num :: NumInteger, den :: NumInteger):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-rfrac(self, l :: Loc, num :: NumInteger, den :: NumInteger):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-bool(self, l :: Loc, b :: Boolean):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-str(self, l :: Loc, s :: String):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method s-dot(self, l :: Loc, obj :: Expr, field :: String):
+    with-loc(l, lam():
+        obj.visit(self)
+    end)
+  end,
+  method s-get-bang(self, l :: Loc, obj :: Expr, field :: String):
+    with-loc(l, lam():
+        obj.visit(self)
+    end)
+  end,
+  method s-bracket(self, l :: Loc, obj :: Expr, key :: Expr):
+    with-loc(l, lam():
+        obj.visit(self) and key.visit(self)
+    end)
+  end,
+  method s-data(
+      self,
+      l :: Loc,
+      name :: String,
+      params :: List<Name>, # type params
+      mixins :: List<Expr>,
+      variants :: List<Variant>,
+      shared-members :: List<Member>,
+      _check-loc :: Option<Loc>,
+      _check :: Option<Expr>
+      ):
+    with-loc(l, lam():
+        all(_.visit(self), params)
+        and all(_.visit(self), mixins)
+        and all(_.visit(self), variants)
+        and all(_.visit(self), shared-members)
+        and self.option(_check)
+    end)
+  end,
+  method s-data-expr(
+      self,
+      l :: Loc,
+      name :: String,
+      namet :: Name,
+      params :: List<Name>, # type params
+      mixins :: List<Expr>,
+      variants :: List<Variant>,
+      shared-members :: List<Member>,
+      _check-loc :: Option<Loc>,
+      _check :: Option<Expr>
+      ):
+    with-loc(l, lam():
+        namet.visit(self)
+        and all(_.visit(self), params)
+        and all(_.visit(self), mixins)
+        and all(_.visit(self), variants)
+        and all(_.visit(self), shared-members)
+        and self.option(_check)
+    end)
+  end,
+  method s-for(
+      self,
+      l :: Loc,
+      iterator :: Expr,
+      bindings :: List<ForBind>,
+      ann :: Ann,
+      body :: Expr,
+      blocky :: Boolean
+      ):
+    with-loc(l, lam():
+        iterator.visit(self) and all(_.visit(self), bindings) and ann.visit(self) and body.visit(self)
+    end)
+  end,
+  method s-check(self, l :: Loc, name :: Option<String>, body :: Expr, keyword-check :: Boolean):
+    with-loc(l, lam():
+        body.visit(self)
+    end)
+  end,
+
+  method s-data-field(self, l :: Loc, name :: String, value :: Expr):
+    with-loc(l, lam():
+        value.visit(self)
+    end)
+  end,
+  method s-mutable-field(self, l :: Loc, name :: String, ann :: Ann, value :: Expr):
+    with-loc(l, lam():
+        ann.visit(self) and value.visit(self)
+    end)
+  end,
+  method s-method-field(
+      self,
+      l :: Loc,
+      name :: String,
+      params :: List<Name>,
+      args :: List<Bind>, # Value parameters
+      ann :: Ann, # return type
+      doc :: String,
+      body :: Expr,
+      _check-loc :: Option<Loc>,
+      _check :: Option<Expr>,
+      blocky :: Boolean
+      ):
+    with-loc(l, lam():
+        all(_.visit(self), params)
+        and all(_.visit(self), args)
+        and ann.visit(self)
+        and body.visit(self)
+        and self.option(_check)
+    end)
+  end,
+
+  method s-for-bind(self, l :: Loc, bind :: Bind, value :: Expr):
+    with-loc(l, lam():
+        bind.visit(self) and value.visit(self)
+    end)
+  end,
+  method s-column-binds(self, l :: Loc, binds :: List<Bind>, table :: Expr):
+    with-loc(l, lam():
+        binds.all(_.visit(self)) and table.visit(self)
+    end)
+  end,
+  method s-variant-member(self, l :: Loc, member-type :: VariantMemberType, bind :: Bind):
+    with-loc(l, lam():
+        bind.visit(self)
+    end)
+  end,
+  method s-variant(
+      self,
+      l :: Loc,
+      constr-loc :: Loc,
+      name :: String,
+      members :: List<VariantMember>,
+      with-members :: List<Member>
+      ):
+    with-loc(l, lam():
+        all(_.visit(self), members) and all(_.visit(self), with-members)
+    end)
+  end,
+  method s-singleton-variant(
+      self,
+      l :: Loc,
+      name :: String,
+      with-members :: List<Member>
+      ):
+    with-loc(l, lam():
+        all(_.visit(self), with-members)
+    end)
+  end,
+  method s-column-sort(self, l, column :: Name, direction :: ColumnSortOrder):
+    with-loc(l, lam():
+        column.visit(self)
+    end)
+  end,
+  method s-table-extend(self, l, column-binds :: ColumnBinds, extensions :: List<Member>):
+    with-loc(l, lam():
+        column-binds.visit(self) and extensions.all(_.visit(self))
+    end)
+  end,
+  method s-table-update(self, l, column-binds :: ColumnBinds, updates :: List<Member>):
+    with-loc(l, lam():
+        column-binds.visit(self) and updates.all(_.visit(self))
+    end)
+  end,
+  method s-table-filter(self, l, column-binds :: ColumnBinds, predicate :: Expr):
+    with-loc(l, lam():
+        column-binds.visit(self) and predicate.visit(self)
+    end)
+  end,
+  method s-table-select(self, l, columns :: List<Name>, table :: Expr):
+    with-loc(l, lam():
+        columns.all(_.visit(self)) and table.visit(self)
+    end)
+  end,
+  method s-table-order(self, l, table :: Expr, ordering :: List<ColumnSort>):
+    with-loc(l, lam():
+        table.visit(self) and ordering.all(_.visit(self))
+    end)
+  end,
+  method s-table-extract(self, l, column :: Name, table :: Expr):
+    with-loc(l, lam():
+        column.visit(self) and table.visit(self)
+    end)
+  end,
+  method s-table-extend-field(self, l, name :: String, value :: Expr, ann :: Ann):
+    with-loc(l, lam():
+        value.visit(self) and ann.visit(self)
+    end)
+  end,
+  method s-table-extend-reducer(self, l, name :: String, reducer :: Expr, col :: Name, ann :: Ann):
+    with-loc(l, lam():
+        reducer.visit(self) and col.visit(self) and ann.visit(self)
+    end)
+  end,
+  method s-sanitize(self, l, name, sanitizer):
+    with-loc(l, lam():
+        name.visit(self) and sanitizer.visit(self)
+    end)
+  end,
+  method s-table-src(self, l, src):
+    with-loc(l, lam():
+        src.visit(self)
+    end)
+  end,
+
+  method s-spy-block(self, l :: Loc, message :: Option<Expr>, contents :: List<SpyField>):
+    with-loc(l, lam():
+        self.option(message) and all(_.visit(self), contents)
+    end)
+  end,
+  method s-spy-expr(self, l :: Loc, name :: String, value :: Expr, implicit-label :: Boolean):
+    with-loc(l, lam():
+        value.visit(self)
+    end)
+  end,
+
+  method a-blank(self):
+    true
+  end,
+  method a-any(self, l):
+    with-loc(l, lam():
+        true
+    end)
+  end,
+  method a-name(self, l, id):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method a-type-var(self, l, id):
+    with-loc(l, lam():
+        id.visit(self)
+    end)
+  end,
+  method a-arrow(self, l, args, ret, _):
+    with-loc(l, lam():
+        all(_.visit(self), args) and ret.visit(self)
+    end)
+  end,
+  method a-arrow-argnames(self, l, args, ret, _):
+    with-loc(l, lam():
+        all(_.visit(self), args) and ret.visit(self)
+    end)
+  end,
+  method a-method(self, l, args, ret):
+    with-loc(l, lam():
+        all(_.visit(self), args) and ret.visit(self)
+    end)
+  end,
+  method a-record(self, l, fields):
+    with-loc(l, lam():
+        all(_.visit(self), fields)
+    end)
+  end,
+  method a-tuple(self, l, fields):
+    with-loc(l, lam():
+        all(_.visit(self), fields)
+    end)
+  end,
+  method a-app(self, l, ann, args):
+    with-loc(l, lam():
+        ann.visit(self) and all(_.visit(self), args)
+    end)
+  end,
+  method a-pred(self, l, ann, exp):
+    with-loc(l, lam():
+        ann.visit(self) and exp.visit(self)
+    end)
+  end,
+  method a-dot(self, l, obj, field):
+    with-loc(l, lam():
+        obj.visit(self)
+    end)
+  end,
+  method a-field(self, l, name, ann):
+    with-loc(l, lam():
+        ann.visit(self)
+    end)
+  end
+  }
+end
+
 dummy-loc-visitor = {
   method option(self, opt):
     cases(Option) opt:
@@ -3143,17 +4096,17 @@ dummy-loc-visitor = {
   method s-name(self, l, s):
     s-name(dummy-loc, s)
   end,
-  method s-global(self, l, s):
-    s-global(dummy-loc, s)
+  method s-global(self, s):
+    s-global(s)
   end,
-  method s-type-global(self, l, s):
-    s-type-global(dummy-loc, s)
+  method s-type-global(self, s):
+    s-type-global(s)
   end,
-  method s-module-global(self, l, s):
-    s-module-global(dummy-loc, s)
+  method s-module-global(self, s):
+    s-module-global(s)
   end,
-  method s-atom(self, l, base, serial):
-    s-atom(dummy-loc, base, serial)
+  method s-atom(self, base, serial):
+    s-atom(base, serial)
   end,
 
   method s-star(self, _, hidden):

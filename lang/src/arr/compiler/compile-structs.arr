@@ -257,7 +257,7 @@ sharing:
             end
           | d-type(_, _) => remote-datatype
         end
-        some(T.t-name(T.module-uri(de.origin.uri-of-definition), A.s-type-global(A.dummy-loc, de.typ.name), de.origin.local-bind-site, false))
+        some(T.t-name(T.module-uri(de.origin.uri-of-definition), A.s-type-global(de.typ.name), de.origin.local-bind-site, false))
       | none =>
         cases(Option) provides-of-aliased.aliases.get(name):
           | some(typ) =>
@@ -464,11 +464,11 @@ fun type-from-raw(uri, typ, tyvar-env :: SD.StringDict<T.Type>) block:
       T.t-tuple(for map(e from typ.elts): tfr(e) end, l, false)
     | t == "name" then:
       if typ.origin.import-type == "$ELF":
-        T.t-name(T.module-uri(uri), A.s-type-global(l, typ.name), l, false)
+        T.t-name(T.module-uri(uri), A.s-type-global(typ.name), l, false)
       else if typ.origin.import-type == "uri":
-        T.t-name(T.module-uri(typ.origin.uri), A.s-type-global(l, typ.name), l, false)
+        T.t-name(T.module-uri(typ.origin.uri), A.s-type-global(typ.name), l, false)
       else:
-        T.t-name(T.dependency(make-dep(typ.origin)), A.s-type-global(l, typ.name), l, false)
+        T.t-name(T.dependency(make-dep(typ.origin)), A.s-type-global(typ.name), l, false)
       end
     | t == "tyvar" then:
       cases(Option<T.Type>) tyvar-env.get(typ.name):
@@ -477,7 +477,7 @@ fun type-from-raw(uri, typ, tyvar-env :: SD.StringDict<T.Type>) block:
       end
     | t == "forall" then:
       new-env = for fold(new-env from tyvar-env, a from typ.args):
-        tvn = A.global-names.make-atom(l, a)
+        tvn = A.global-names.make-atom(a)
         new-env.set(a, tvn)
       end
       params = for SD.map-keys(k from new-env):
@@ -521,7 +521,7 @@ fun datatype-from-raw(uri, datatyp):
     d-alias(origin, datatyp.name)
   else if datatyp.tag == "data":
     pdict = for fold(pdict from SD.make-string-dict(), a from datatyp.params):
-      tvn = A.global-names.make-atom(l, a)
+      tvn = A.global-names.make-atom(a)
       pdict.set(a, tvn)
     end
     params = for SD.map-keys(k from pdict):
@@ -3013,7 +3013,7 @@ t-within-num = t-arrow([list: t-number], t-arrow([list: t-number, t-number], t-b
 t-within-any = t-arrow([list: t-number], t-arrow([list: t-top, t-top], t-boolean))
 
 fun t-forall1(f):
-  n = A.global-names.make-atom(A.dummy-loc, "a")
+  n = A.global-names.make-atom("a")
   t-forall([list: t-var(n)], f(t-var(n)))
 end
 
@@ -3325,16 +3325,16 @@ no-globals = globals([string-dict:], [string-dict:], [string-dict:])
 
 
 reactor-optional-fields = [SD.string-dict:
-  "last-image",       {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "on-tick",          {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "to-draw",          {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "on-key",           {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "on-raw-key",       {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "on-mouse",         {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "stop-when",        {(l): A.a-name(l, A.s-type-global(l, "Function"))},
-  "seconds-per-tick", {(l): A.a-name(l, A.s-type-global(l, "NumPositive"))},
-  "title",            {(l): A.a-name(l, A.s-type-global(l, "String"))},
-  "close-when-stop",  {(l): A.a-name(l, A.s-type-global(l, "Boolean"))}
+  "last-image",       {(l): A.a-name(l, A.s-type-global("Function"))},
+  "on-tick",          {(l): A.a-name(l, A.s-type-global("Function"))},
+  "to-draw",          {(l): A.a-name(l, A.s-type-global("Function"))},
+  "on-key",           {(l): A.a-name(l, A.s-type-global("Function"))},
+  "on-raw-key",       {(l): A.a-name(l, A.s-type-global("Function"))},
+  "on-mouse",         {(l): A.a-name(l, A.s-type-global("Function"))},
+  "stop-when",        {(l): A.a-name(l, A.s-type-global("Function"))},
+  "seconds-per-tick", {(l): A.a-name(l, A.s-type-global("NumPositive"))},
+  "title",            {(l): A.a-name(l, A.s-type-global("String"))},
+  "close-when-stop",  {(l): A.a-name(l, A.s-type-global("Boolean"))}
 ]
 
 reactor-fields = reactor-optional-fields.set("init", {(l): A.a-any(l)})
