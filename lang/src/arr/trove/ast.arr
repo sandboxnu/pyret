@@ -3013,7 +3013,7 @@ default-iter-visitor = {
       _check :: Option<Expr>,
       blocky :: Boolean
       ):
-    all(_.visit(self), args)
+    all(_.visit(self), params)
     and all(_.visit(self), args)
     and ann.visit(self)
     and body.visit(self)
