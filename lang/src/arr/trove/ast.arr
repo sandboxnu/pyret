@@ -3129,25 +3129,47 @@ default-iter-visitor = {
   end
 }
 
-fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
-  doc: ```
-       Like default-iter-visitor, but tracks the srcloc of the innermost
-       enclosing AST node during traversal. Post-resolution Names (atoms and
-       globals) carry no srclocs, so this recovers an approximate location
-       for them: on-name is called with every Name reached and the most
-       specific srcloc in effect at that point (for s-name/s-underscore,
-       their own loc). Returning false from on-name stops the traversal,
-       like any other iter-visitor method.
-       ```
-  var current-loc = dummy-loc
-  fun with-loc(l, visit-children) block:
-    old-loc = current-loc
-    current-loc := l
-    result = visit-children()
-    current-loc := old-loc
-    result
-  end
-  {
+# Like default-iter-visitor, but tracks the srcloc of the innermost enclosing
+# AST node during traversal. Post-resolution Names (atoms and globals) carry no
+# srclocs, so this base recovers an approximate location for them via extension:
+# the six Name methods below are no-op `true` (they never stop the traversal),
+# and every loc-carrying node sets the enclosing loc to its own srcloc before
+# visiting children. An extender overrides the Name methods to read the loc in
+# effect via `self.enclosing-loc()` for the loc-less names (globals/atom), or
+# uses the method's own `l` argument for s-name/s-underscore, which carry one.
+#
+# Like default-map-visitor/default-iter-visitor, this is a shared top-level
+# object value (extended with `.{ method ... }`), not a constructor.
+#
+# The enclosing loc is held in the module-level `var loc-tracking-enclosing`
+# below, exposed read-only through `self.enclosing-loc()`; the storage is an
+# implementation detail. It is not an object ref field because object-literal
+# ref fields (`{ref x: v}`) are NYI in the desugarer, and it is not a `data`
+# ref field because data-ref updates (`x!{v: l}`) route through checkRefAnns
+# (~5 allocations/update) -- far too hot for per-node state on every traversal.
+# A module-level `var` compiles to a plain boxed-variable store, the cheapest
+# available mechanism.
+#
+# The single var is shared by every extension. This is safe because the runtime
+# is synchronous and each tracking method saves/restores it around its child
+# visits, so even a nested traversal (an extension method visiting another AST
+# mid-visit) unwinds stack-style. On any Program/Expr traversal the var is set
+# by the enclosing node before a Name is ever reached, so extensions never
+# observe a stale value; visiting a bare Name directly reads whatever the var
+# last held (meaningless, as in every prior design).
+#
+# The restore runs after the child-visit `and`-chain has been bound to
+# `result`, so an early `false` (from an overridden Name method or a child)
+# short-circuits the chain but still restores the enclosing loc before
+# returning.
+#
+# Coverage matches the raw recursion of default-iter-visitor and then some: it
+# reaches annotation ids (a-name/a-type-var), type params, and table field
+# annotations, so names in those positions are visited too.
+var loc-tracking-enclosing = dummy-loc
+loc-tracking-iter-visitor = {
+  method enclosing-loc(self): loc-tracking-enclosing end,
+
   method option(self, opt):
     cases(Option) opt:
       | none => true
@@ -3155,32 +3177,40 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
     end
   end,
 
-  method s-underscore(self, l): on-name(s-underscore(l), l) end,
-  method s-name(self, l, s): on-name(s-name(l, s), l) end,
-  method s-global(self, s): on-name(s-global(s), current-loc) end,
-  method s-type-global(self, s): on-name(s-type-global(s), current-loc) end,
-  method s-module-global(self, s): on-name(s-module-global(s), current-loc) end,
-  method s-atom(self, base, serial): on-name(s-atom(base, serial), current-loc) end,
+  method s-underscore(self, l): true end,
+  method s-name(self, l, s): true end,
+  method s-global(self, s): true end,
+  method s-type-global(self, s): true end,
+  method s-module-global(self, s): true end,
+  method s-atom(self, base, serial): true end,
 
-  method s-star(self, l, hidden):
-    with-loc(l, lam():
-        hidden.all(_.visit(self))
-    end)
+  method s-star(self, l, hidden) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = hidden.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-module-ref(self, l, path, as-name):
-    with-loc(l, lam():
-        path.all(_.visit(self)) and self.option(as-name)
-    end)
+  method s-module-ref(self, l, path, as-name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = path.all(_.visit(self)) and self.option(as-name)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-local-ref(self, l, name, as-name):
-    with-loc(l, lam():
-        name.visit(self) and as-name.visit(self)
-    end)
+  method s-local-ref(self, l, name, as-name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and as-name.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-remote-ref(self, l, uri, name, as-name):
-    with-loc(l, lam():
-        name.visit(self) and as-name.visit(self)
-    end)
+  method s-remote-ref(self, l, uri, name, as-name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and as-name.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
   method s-defined-module(self, name, val, uri):
@@ -3196,444 +3226,520 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
     typ.visit(self)
   end,
 
-  method s-module(self, l, answer, dm, dv, dt, checks):
-    with-loc(l, lam():
-        answer.visit(self) and lists.all(_.visit(self), dm) and lists.all(_.visit(self), dv) and lists.all(_.visit(self), dt) and checks.visit(self)
-    end)
+  method s-module(self, l, answer, dm, dv, dt, checks) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = answer.visit(self) and lists.all(_.visit(self), dm) and lists.all(_.visit(self), dv) and lists.all(_.visit(self), dt) and checks.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-program(self, l, _use, _provide, provided-types, provides, imports, body):
-    with-loc(l, lam():
-        self.option(_use)
+  method s-program(self, l, _use, _provide, provided-types, provides, imports, body) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = self.option(_use)
         and _provide.visit(self)
         and provided-types.visit(self)
         and lists.all(_.visit(self), provides)
         and lists.all(_.visit(self), imports)
         and body.visit(self)
-    end)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-use(self, l, name, import-type):
-    with-loc(l, lam():
-        name.visit(self) and import-type.visit(self)
-    end)
+  method s-use(self, l, name, import-type) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and import-type.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-import(self, l, import-type, name):
-    with-loc(l, lam():
-        import-type.visit(self) and name.visit(self)
-    end)
+  method s-import(self, l, import-type, name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = import-type.visit(self) and name.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-include(self, l, import-type):
-    with-loc(l, lam():
-        import-type.visit(self)
-    end)
+  method s-include(self, l, import-type) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = import-type.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-include-from(self, l, mod, specs):
-    with-loc(l, lam():
-        mod.all(_.visit(self)) and specs.all(_.visit(self))
-    end)
+  method s-include-from(self, l, mod, specs) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = mod.all(_.visit(self)) and specs.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-include-name(self, l, name-spec):
-    with-loc(l, lam():
-        name-spec.visit(self)
-    end)
+  method s-include-name(self, l, name-spec) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-include-data(self, l, name-spec, hidden):
-    with-loc(l, lam():
-        name-spec.visit(self) and hidden.all(_.visit(self))
-    end)
+  method s-include-data(self, l, name-spec, hidden) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self) and hidden.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-include-type(self, l, name-spec):
-    with-loc(l, lam():
-        name-spec.visit(self)
-    end)
+  method s-include-type(self, l, name-spec) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-include-module(self, l, name-spec):
-    with-loc(l, lam():
-        name-spec.visit(self)
-    end)
+  method s-include-module(self, l, name-spec) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
   method s-const-import(self, l, mod):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-special-import(self, l, kind, args):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
-  method s-import-types(self, l, import-type, name, types):
-    with-loc(l, lam():
-        name.visit(self) and types.visit(self)
-    end)
+  method s-import-types(self, l, import-type, name, types) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and types.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-import-fields(self, l, fields, import-type):
-    with-loc(l, lam():
-        all(_.visit(self), fields)
-    end)
+  method s-import-fields(self, l, fields, import-type) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-provide(self, l, expr):
-    with-loc(l, lam():
-        expr.visit(self)
-    end)
+  method s-provide(self, l, expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = expr.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-provide-all(self, l):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-provide-none(self, l):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
-  method s-provide-types(self, l, anns):
-    with-loc(l, lam():
-        all(_.visit(self), anns)
-    end)
+  method s-provide-types(self, l, anns) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), anns)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-provide-types-all(self, l):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-provide-types-none(self, l):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
-  method s-provide-block(self, l, path, specs):
-    with-loc(l, lam():
-        path.all(_.visit(self)) and specs.all(_.visit(self))
-    end)
+  method s-provide-block(self, l, path, specs) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = path.all(_.visit(self)) and specs.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-provide-name(self, l, name-spec):
-    with-loc(l, lam():
-        name-spec.visit(self)
-    end)
+  method s-provide-name(self, l, name-spec) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-provide-data(self, l, name-spec, hidden):
-    with-loc(l, lam():
-        name-spec.visit(self) and hidden.all(_.visit(self))
-    end)
+  method s-provide-data(self, l, name-spec, hidden) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self) and hidden.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-provide-type(self, l, name-spec):
-    with-loc(l, lam():
-        name-spec.visit(self)
-    end)
+  method s-provide-type(self, l, name-spec) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-provide-module(self, l, name-spec):
-    with-loc(l, lam():
-        name-spec.visit(self)
-    end)
+  method s-provide-module(self, l, name-spec) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name-spec.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
   method s-template(self, l):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
 
-  method s-bind(self, l, shadows, name, ann):
-    with-loc(l, lam():
-        name.visit(self) and ann.visit(self)
-    end)
+  method s-bind(self, l, shadows, name, ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-tuple-bind(self, l, fields, as-name):
-    with-loc(l, lam():
-        all(_.visit(self), fields) and self.option(as-name)
-    end)
+  method s-tuple-bind(self, l, fields, as-name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields) and self.option(as-name)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-var-bind(self, l, bind, expr):
-    with-loc(l, lam():
-        bind.visit(self) and expr.visit(self)
-    end)
+  method s-var-bind(self, l, bind, expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = bind.visit(self) and expr.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-let-bind(self, l, bind, expr):
-    with-loc(l, lam():
-        bind.visit(self) and expr.visit(self)
-    end)
-  end,
-
-  method s-type-bind(self, l, name, params, ann):
-    with-loc(l, lam():
-        name.visit(self) and ann.visit(self) and all(_.visit(self), params)
-    end)
+  method s-let-bind(self, l, bind, expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = bind.visit(self) and expr.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-newtype-bind(self, l, name, namet):
-    with-loc(l, lam():
-        name.visit(self) and namet.visit(self)
-    end)
+  method s-type-bind(self, l, name, params, ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and ann.visit(self) and all(_.visit(self), params)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-type-let-expr(self, l, binds, body, blocky):
-    with-loc(l, lam():
-        all(_.visit(self), binds) and body.visit(self)
-    end)
+  method s-newtype-bind(self, l, name, namet) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and namet.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-let-expr(self, l, binds, body, blocky):
-    with-loc(l, lam():
-        all(_.visit(self), binds) and body.visit(self)
-    end)
+  method s-type-let-expr(self, l, binds, body, blocky) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), binds) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-letrec-bind(self, l, bind, expr):
-    with-loc(l, lam():
-        bind.visit(self) and expr.visit(self)
-    end)
+  method s-let-expr(self, l, binds, body, blocky) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), binds) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-letrec(self, l, binds, body, blocky):
-    with-loc(l, lam():
-        all(_.visit(self), binds) and body.visit(self)
-    end)
+  method s-letrec-bind(self, l, bind, expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = bind.visit(self) and expr.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-hint-exp(self, l :: Loc, hints :: List<Hint>, exp :: Expr):
-    with-loc(l, lam():
-        exp.visit(self)
-    end)
+  method s-letrec(self, l, binds, body, blocky) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), binds) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-instantiate(self, l :: Loc, expr :: Expr, params :: List<Ann>):
-    with-loc(l, lam():
-        expr.visit(self) and all(_.visit(self), params)
-    end)
+  method s-hint-exp(self, l :: Loc, hints :: List<Hint>, exp :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = exp.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-block(self, l, stmts):
-    with-loc(l, lam():
-        all(_.visit(self), stmts)
-    end)
+  method s-instantiate(self, l :: Loc, expr :: Expr, params :: List<Ann>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = expr.visit(self) and all(_.visit(self), params)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-user-block(self, l :: Loc, body :: Expr):
-    with-loc(l, lam():
-        body.visit(self)
-    end)
+  method s-block(self, l, stmts) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), stmts)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-fun(self, l, name, params, args, ann, doc, body, _check-loc, _check, blocky):
-    with-loc(l, lam():
-        all(_.visit(self), params)
+  method s-user-block(self, l :: Loc, body :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
+  end,
+
+  method s-fun(self, l, name, params, args, ann, doc, body, _check-loc, _check, blocky) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), params)
         and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
-    end)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-type(self, l :: Loc, name :: Name, params :: List<Name>, ann :: Ann):
-    with-loc(l, lam():
-        name.visit(self) and ann.visit(self) and all(_.visit(self), params)
-    end)
+  method s-type(self, l :: Loc, name :: Name, params :: List<Name>, ann :: Ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and ann.visit(self) and all(_.visit(self), params)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-newtype(self, l :: Loc, name :: Name, namet :: Name):
-    with-loc(l, lam():
-        name.visit(self) and namet.visit(self)
-    end)
+  method s-newtype(self, l :: Loc, name :: Name, namet :: Name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and namet.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-var(self, l :: Loc, name :: Bind, value :: Expr):
-    with-loc(l, lam():
-        name.visit(self) and value.visit(self)
-    end)
+  method s-var(self, l :: Loc, name :: Bind, value :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-rec(self, l :: Loc, name :: Bind, value :: Expr):
-    with-loc(l, lam():
-        name.visit(self) and value.visit(self)
-    end)
+  method s-rec(self, l :: Loc, name :: Bind, value :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-let(self, l :: Loc, name :: Bind, value :: Expr, keyword-val :: Boolean):
-    with-loc(l, lam():
-        name.visit(self) and value.visit(self)
-    end)
+  method s-let(self, l :: Loc, name :: Bind, value :: Expr, keyword-val :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-ref(self, l :: Loc, ann :: Option<Ann>):
-    with-loc(l, lam():
-        self.option(ann)
-    end)
+  method s-ref(self, l :: Loc, ann :: Option<Ann>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = self.option(ann)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-when(self, l :: Loc, test :: Expr, block :: Expr, blocky :: Boolean):
-    with-loc(l, lam():
-        test.visit(self) and block.visit(self)
-    end)
+  method s-when(self, l :: Loc, test :: Expr, block :: Expr, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = test.visit(self) and block.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-contract(self, l :: Loc, name :: Name, params :: List<Name>, ann :: Ann):
-    with-loc(l, lam():
-        name.visit(self) and all(_.visit(self), params) and ann.visit(self)
-    end)
+  method s-contract(self, l :: Loc, name :: Name, params :: List<Name>, ann :: Ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and all(_.visit(self), params) and ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-assign(self, l :: Loc, id :: Name, value :: Expr):
-    with-loc(l, lam():
-        id.visit(self) and value.visit(self)
-    end)
+  method s-assign(self, l :: Loc, id :: Name, value :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self) and value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-if-branch(self, l :: Loc, test :: Expr, body :: Expr):
-    with-loc(l, lam():
-        test.visit(self) and body.visit(self)
-    end)
+  method s-if-branch(self, l :: Loc, test :: Expr, body :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = test.visit(self) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-if-pipe-branch(self, l :: Loc, test :: Expr, body :: Expr):
-    with-loc(l, lam():
-        test.visit(self) and body.visit(self)
-    end)
+  method s-if-pipe-branch(self, l :: Loc, test :: Expr, body :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = test.visit(self) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-if(self, l :: Loc, branches :: List<IfBranch>, blocky :: Boolean):
-    with-loc(l, lam():
-        all(_.visit(self), branches)
-    end)
+  method s-if(self, l :: Loc, branches :: List<IfBranch>, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), branches)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-if-else(self, l :: Loc, branches :: List<IfBranch>, _else :: Expr, blocky :: Boolean):
-    with-loc(l, lam():
-        all(_.visit(self), branches) and _else.visit(self)
-    end)
-  end,
-
-  method s-if-pipe(self, l :: Loc, branches :: List<IfPipeBranch>, blocky :: Boolean):
-    with-loc(l, lam():
-        all(_.visit(self), branches)
-    end)
-  end,
-  method s-if-pipe-else(self, l :: Loc, branches :: List<IfPipeBranch>, _else :: Expr, blocky :: Boolean):
-    with-loc(l, lam():
-        all(_.visit(self), branches) and _else.visit(self)
-    end)
+  method s-if-else(self, l :: Loc, branches :: List<IfBranch>, _else :: Expr, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), branches) and _else.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-cases-bind(self, l :: Loc, typ :: CasesBindType, bind :: Bind):
-    with-loc(l, lam():
-        bind.visit(self)
-    end)
+  method s-if-pipe(self, l :: Loc, branches :: List<IfPipeBranch>, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), branches)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-cases-branch(self, l :: Loc, pat-loc :: Loc, name :: String, args :: List<CasesBind>, body :: Expr):
-    with-loc(l, lam():
-        all(_.visit(self), args) and body.visit(self)
-    end)
-  end,
-
-  method s-singleton-cases-branch(self, l :: Loc, pat-loc :: Loc, name :: String, body :: Expr):
-    with-loc(l, lam():
-        body.visit(self)
-    end)
+  method s-if-pipe-else(self, l :: Loc, branches :: List<IfPipeBranch>, _else :: Expr, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), branches) and _else.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-cases(self, l :: Loc, typ :: Ann, val :: Expr, branches :: List<CasesBranch>, blocky :: Boolean):
-    with-loc(l, lam():
-        typ.visit(self) and val.visit(self) and all(_.visit(self), branches)
-    end)
+  method s-cases-bind(self, l :: Loc, typ :: CasesBindType, bind :: Bind) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = bind.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-cases-else(self, l :: Loc, typ :: Ann, val :: Expr, branches :: List<CasesBranch>, _else :: Expr, blocky :: Boolean):
-    with-loc(l, lam():
-        typ.visit(self) and val.visit(self) and all(_.visit(self), branches) and _else.visit(self)
-    end)
-  end,
-
-  method s-op(self, l :: Loc, op-l :: Loc, op :: String, left :: Expr, right :: Expr):
-    with-loc(l, lam():
-        left.visit(self) and right.visit(self)
-    end)
+  method s-cases-branch(self, l :: Loc, pat-loc :: Loc, name :: String, args :: List<CasesBind>, body :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), args) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-check-test(self, l :: Loc, op :: CheckOp, refinement :: Option<Expr>, left :: Expr, right :: Option<Expr>, cause :: Option<Expr>):
-    with-loc(l, lam():
-        op.visit(self) and self.option(refinement) and left.visit(self) and self.option(right) and self.option(cause)
-    end)
+  method s-singleton-cases-branch(self, l :: Loc, pat-loc :: Loc, name :: String, body :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
+  end,
+
+  method s-cases(self, l :: Loc, typ :: Ann, val :: Expr, branches :: List<CasesBranch>, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = typ.visit(self) and val.visit(self) and all(_.visit(self), branches)
+    loc-tracking-enclosing := old-loc
+    result
+  end,
+  method s-cases-else(self, l :: Loc, typ :: Ann, val :: Expr, branches :: List<CasesBranch>, _else :: Expr, blocky :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = typ.visit(self) and val.visit(self) and all(_.visit(self), branches) and _else.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
+  end,
+
+  method s-op(self, l :: Loc, op-l :: Loc, op :: String, left :: Expr, right :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = left.visit(self) and right.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
+  end,
+
+  method s-check-test(self, l :: Loc, op :: CheckOp, refinement :: Option<Expr>, left :: Expr, right :: Option<Expr>, cause :: Option<Expr>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = op.visit(self) and self.option(refinement) and left.visit(self) and self.option(right) and self.option(cause)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
   method s-op-is(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-is-roughly(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-is-not-roughly(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-is-op(self, l :: Loc, op :: String):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-is-not(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-is-not-op(self, l :: Loc, op :: String):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-satisfies(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-satisfies-not(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-raises(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-raises-other(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-raises-not(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-raises-satisfies(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
   method s-op-raises-violates(self, l :: Loc):
-    with-loc(l, lam():
-     true 
-    end)
+    true
   end,
 
 
-  method s-check-expr(self, l :: Loc, expr :: Expr, ann :: Ann):
-    with-loc(l, lam():
-        expr.visit(self) and ann.visit(self)
-    end)
+  method s-check-expr(self, l :: Loc, expr :: Expr, ann :: Ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = expr.visit(self) and ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-paren(self, l :: Loc, expr :: Expr):
-    with-loc(l, lam():
-        expr.visit(self)
-    end)
+  method s-paren(self, l :: Loc, expr :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = expr.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
   method s-lam(
@@ -3648,11 +3754,13 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       _check-loc :: Option<Loc>,
       _check :: Option<Expr>,
       blocky :: Boolean
-      ):
-    with-loc(l, lam():
-        all(_.visit(self), params)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), params)
         and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
-    end)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-method(
       self,
@@ -3666,160 +3774,190 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       _check-loc :: Option<Loc>,
       _check :: Option<Expr>,
       blocky :: Boolean
-      ):
-    with-loc(l, lam():
-        all(_.visit(self), params) and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
-    end)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), params) and all(_.visit(self), args) and ann.visit(self) and body.visit(self) and self.option(_check)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-extend(self, l :: Loc, supe :: Expr, fields :: List<Member>):
-    with-loc(l, lam():
-        supe.visit(self) and all(_.visit(self), fields)
-    end)
+  method s-extend(self, l :: Loc, supe :: Expr, fields :: List<Member>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = supe.visit(self) and all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-update(self, l :: Loc, supe :: Expr, fields :: List<Member>):
-    with-loc(l, lam():
-        supe.visit(self) and all(_.visit(self), fields)
-    end)
+  method s-update(self, l :: Loc, supe :: Expr, fields :: List<Member>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = supe.visit(self) and all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-tuple(self, l :: Loc, fields :: List<Expr>):
-    with-loc(l, lam():
-        all(_.visit(self), fields)
-    end)
+  method s-tuple(self, l :: Loc, fields :: List<Expr>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-tuple-get(self, l :: Loc, tup :: Expr, index :: Number, index-loc :: Loc):
-    with-loc(l, lam():
-        tup.visit(self)
-    end)
+  method s-tuple-get(self, l :: Loc, tup :: Expr, index :: Number, index-loc :: Loc) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = tup.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-obj(self, l :: Loc, fields :: List<Member>):
-    with-loc(l, lam():
-        all(_.visit(self), fields)
-    end)
+  method s-obj(self, l :: Loc, fields :: List<Member>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-array(self, l :: Loc, values :: List<Expr>):
-    with-loc(l, lam():
-        all(_.visit(self), values)
-    end)
+  method s-array(self, l :: Loc, values :: List<Expr>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), values)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-construct(self, l :: Loc, mod :: ConstructModifier, constructor :: Expr, values :: List<Expr>):
-    with-loc(l, lam():
-        constructor.visit(self) and all(_.visit(self), values)
-    end)
+  method s-construct(self, l :: Loc, mod :: ConstructModifier, constructor :: Expr, values :: List<Expr>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = constructor.visit(self) and all(_.visit(self), values)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-reactor(self, l :: Loc, fields :: List<Member>):
-    with-loc(l, lam():
-        all(_.visit(self), fields)
-    end)
+  method s-reactor(self, l :: Loc, fields :: List<Member>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table(self, l :: Loc, headers :: List<FieldName>, rows :: List<TableRow>):
-    with-loc(l, lam():
-        all(_.visit(self), headers) and all(_.visit(self), rows)
-    end)
+  method s-table(self, l :: Loc, headers :: List<FieldName>, rows :: List<TableRow>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), headers) and all(_.visit(self), rows)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-row(self, l :: Loc, elems :: List<Expr>):
-    with-loc(l, lam():
-        all(_.visit(self), elems)
-    end)
+  method s-table-row(self, l :: Loc, elems :: List<Expr>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), elems)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-load-table(self, l :: Loc, headers :: List<FieldName>, spec :: List<LoadTableSpec>):
-    with-loc(l, lam():
-        all(_.visit(self), headers) and all(_.visit(self), spec)
-    end)
+  method s-load-table(self, l :: Loc, headers :: List<FieldName>, spec :: List<LoadTableSpec>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), headers) and all(_.visit(self), spec)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-field-name(self, l :: Loc, name :: String, ann :: Ann):
-    with-loc(l, lam():
-        ann.visit(self)
-    end)
+  method s-field-name(self, l :: Loc, name :: String, ann :: Ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-app(self, l :: Loc, _fun :: Expr, args :: List<Expr>):
-    with-loc(l, lam():
-        _fun.visit(self) and all(_.visit(self), args)
-    end)
+  method s-app(self, l :: Loc, _fun :: Expr, args :: List<Expr>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = _fun.visit(self) and all(_.visit(self), args)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-prim-app(self, l :: Loc, _fun :: String, args :: List<Expr>, _):
-    with-loc(l, lam():
-        all(_.visit(self), args)
-    end)
+  method s-prim-app(self, l :: Loc, _fun :: String, args :: List<Expr>, _) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), args)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-prim-val(self, l :: Loc, name :: String):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
-  method s-id(self, l :: Loc, id :: Name):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method s-id(self, l :: Loc, id :: Name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-id-var(self, l :: Loc, id :: Name):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method s-id-var(self, l :: Loc, id :: Name) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-id-letrec(self, l :: Loc, id :: Name, safe :: Boolean):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method s-id-letrec(self, l :: Loc, id :: Name, safe :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-id-var-modref(self, l :: Loc, id :: Name, uri :: String, name :: String):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method s-id-var-modref(self, l :: Loc, id :: Name, uri :: String, name :: String) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-id-modref(self, l :: Loc, id :: Name, uri :: String, name :: String):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method s-id-modref(self, l :: Loc, id :: Name, uri :: String, name :: String) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-undefined(self, l :: Loc):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-srcloc(self, l, shadow loc):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-num(self, l :: Loc, n :: Number):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-frac(self, l :: Loc, num :: NumInteger, den :: NumInteger):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-rfrac(self, l :: Loc, num :: NumInteger, den :: NumInteger):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-bool(self, l :: Loc, b :: Boolean):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
   method s-str(self, l :: Loc, s :: String):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
-  method s-dot(self, l :: Loc, obj :: Expr, field :: String):
-    with-loc(l, lam():
-        obj.visit(self)
-    end)
+  method s-dot(self, l :: Loc, obj :: Expr, field :: String) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = obj.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-get-bang(self, l :: Loc, obj :: Expr, field :: String):
-    with-loc(l, lam():
-        obj.visit(self)
-    end)
+  method s-get-bang(self, l :: Loc, obj :: Expr, field :: String) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = obj.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-bracket(self, l :: Loc, obj :: Expr, key :: Expr):
-    with-loc(l, lam():
-        obj.visit(self) and key.visit(self)
-    end)
+  method s-bracket(self, l :: Loc, obj :: Expr, key :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = obj.visit(self) and key.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-data(
       self,
@@ -3831,14 +3969,16 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       shared-members :: List<Member>,
       _check-loc :: Option<Loc>,
       _check :: Option<Expr>
-      ):
-    with-loc(l, lam():
-        all(_.visit(self), params)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), params)
         and all(_.visit(self), mixins)
         and all(_.visit(self), variants)
         and all(_.visit(self), shared-members)
         and self.option(_check)
-    end)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-data-expr(
       self,
@@ -3851,15 +3991,17 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       shared-members :: List<Member>,
       _check-loc :: Option<Loc>,
       _check :: Option<Expr>
-      ):
-    with-loc(l, lam():
-        namet.visit(self)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = namet.visit(self)
         and all(_.visit(self), params)
         and all(_.visit(self), mixins)
         and all(_.visit(self), variants)
         and all(_.visit(self), shared-members)
         and self.option(_check)
-    end)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-for(
       self,
@@ -3869,26 +4011,34 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       ann :: Ann,
       body :: Expr,
       blocky :: Boolean
-      ):
-    with-loc(l, lam():
-        iterator.visit(self) and all(_.visit(self), bindings) and ann.visit(self) and body.visit(self)
-    end)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = iterator.visit(self) and all(_.visit(self), bindings) and ann.visit(self) and body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-check(self, l :: Loc, name :: Option<String>, body :: Expr, keyword-check :: Boolean):
-    with-loc(l, lam():
-        body.visit(self)
-    end)
+  method s-check(self, l :: Loc, name :: Option<String>, body :: Expr, keyword-check :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = body.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-data-field(self, l :: Loc, name :: String, value :: Expr):
-    with-loc(l, lam():
-        value.visit(self)
-    end)
+  method s-data-field(self, l :: Loc, name :: String, value :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-mutable-field(self, l :: Loc, name :: String, ann :: Ann, value :: Expr):
-    with-loc(l, lam():
-        ann.visit(self) and value.visit(self)
-    end)
+  method s-mutable-field(self, l :: Loc, name :: String, ann :: Ann, value :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = ann.visit(self) and value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-method-field(
       self,
@@ -3902,30 +4052,38 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       _check-loc :: Option<Loc>,
       _check :: Option<Expr>,
       blocky :: Boolean
-      ):
-    with-loc(l, lam():
-        all(_.visit(self), params)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), params)
         and all(_.visit(self), args)
         and ann.visit(self)
         and body.visit(self)
         and self.option(_check)
-    end)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-for-bind(self, l :: Loc, bind :: Bind, value :: Expr):
-    with-loc(l, lam():
-        bind.visit(self) and value.visit(self)
-    end)
+  method s-for-bind(self, l :: Loc, bind :: Bind, value :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = bind.visit(self) and value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-column-binds(self, l :: Loc, binds :: List<Bind>, table :: Expr):
-    with-loc(l, lam():
-        binds.all(_.visit(self)) and table.visit(self)
-    end)
+  method s-column-binds(self, l :: Loc, binds :: List<Bind>, table :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = binds.all(_.visit(self)) and table.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-variant-member(self, l :: Loc, member-type :: VariantMemberType, bind :: Bind):
-    with-loc(l, lam():
-        bind.visit(self)
-    end)
+  method s-variant-member(self, l :: Loc, member-type :: VariantMemberType, bind :: Bind) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = bind.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-variant(
       self,
@@ -3934,153 +4092,202 @@ fun loc-tracking-iter-visitor(on-name :: (Name, Loc -> Boolean)) block:
       name :: String,
       members :: List<VariantMember>,
       with-members :: List<Member>
-      ):
-    with-loc(l, lam():
-        all(_.visit(self), members) and all(_.visit(self), with-members)
-    end)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), members) and all(_.visit(self), with-members)
+    loc-tracking-enclosing := old-loc
+    result
   end,
   method s-singleton-variant(
       self,
       l :: Loc,
       name :: String,
       with-members :: List<Member>
-      ):
-    with-loc(l, lam():
-        all(_.visit(self), with-members)
-    end)
+      ) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), with-members)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-column-sort(self, l, column :: Name, direction :: ColumnSortOrder):
-    with-loc(l, lam():
-        column.visit(self)
-    end)
+  method s-column-sort(self, l, column :: Name, direction :: ColumnSortOrder) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = column.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-extend(self, l, column-binds :: ColumnBinds, extensions :: List<Member>):
-    with-loc(l, lam():
-        column-binds.visit(self) and extensions.all(_.visit(self))
-    end)
+  method s-table-extend(self, l, column-binds :: ColumnBinds, extensions :: List<Member>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = column-binds.visit(self) and extensions.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-update(self, l, column-binds :: ColumnBinds, updates :: List<Member>):
-    with-loc(l, lam():
-        column-binds.visit(self) and updates.all(_.visit(self))
-    end)
+  method s-table-update(self, l, column-binds :: ColumnBinds, updates :: List<Member>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = column-binds.visit(self) and updates.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-filter(self, l, column-binds :: ColumnBinds, predicate :: Expr):
-    with-loc(l, lam():
-        column-binds.visit(self) and predicate.visit(self)
-    end)
+  method s-table-filter(self, l, column-binds :: ColumnBinds, predicate :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = column-binds.visit(self) and predicate.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-select(self, l, columns :: List<Name>, table :: Expr):
-    with-loc(l, lam():
-        columns.all(_.visit(self)) and table.visit(self)
-    end)
+  method s-table-select(self, l, columns :: List<Name>, table :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = columns.all(_.visit(self)) and table.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-order(self, l, table :: Expr, ordering :: List<ColumnSort>):
-    with-loc(l, lam():
-        table.visit(self) and ordering.all(_.visit(self))
-    end)
+  method s-table-order(self, l, table :: Expr, ordering :: List<ColumnSort>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = table.visit(self) and ordering.all(_.visit(self))
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-extract(self, l, column :: Name, table :: Expr):
-    with-loc(l, lam():
-        column.visit(self) and table.visit(self)
-    end)
+  method s-table-extract(self, l, column :: Name, table :: Expr) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = column.visit(self) and table.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-extend-field(self, l, name :: String, value :: Expr, ann :: Ann):
-    with-loc(l, lam():
-        value.visit(self) and ann.visit(self)
-    end)
+  method s-table-extend-field(self, l, name :: String, value :: Expr, ann :: Ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = value.visit(self) and ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-extend-reducer(self, l, name :: String, reducer :: Expr, col :: Name, ann :: Ann):
-    with-loc(l, lam():
-        reducer.visit(self) and col.visit(self) and ann.visit(self)
-    end)
+  method s-table-extend-reducer(self, l, name :: String, reducer :: Expr, col :: Name, ann :: Ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = reducer.visit(self) and col.visit(self) and ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-sanitize(self, l, name, sanitizer):
-    with-loc(l, lam():
-        name.visit(self) and sanitizer.visit(self)
-    end)
+  method s-sanitize(self, l, name, sanitizer) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = name.visit(self) and sanitizer.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-table-src(self, l, src):
-    with-loc(l, lam():
-        src.visit(self)
-    end)
+  method s-table-src(self, l, src) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = src.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
-  method s-spy-block(self, l :: Loc, message :: Option<Expr>, contents :: List<SpyField>):
-    with-loc(l, lam():
-        self.option(message) and all(_.visit(self), contents)
-    end)
+  method s-spy-block(self, l :: Loc, message :: Option<Expr>, contents :: List<SpyField>) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = self.option(message) and all(_.visit(self), contents)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method s-spy-expr(self, l :: Loc, name :: String, value :: Expr, implicit-label :: Boolean):
-    with-loc(l, lam():
-        value.visit(self)
-    end)
+  method s-spy-expr(self, l :: Loc, name :: String, value :: Expr, implicit-label :: Boolean) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = value.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
 
   method a-blank(self):
     true
   end,
   method a-any(self, l):
-    with-loc(l, lam():
-        true
-    end)
+    true
   end,
-  method a-name(self, l, id):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method a-name(self, l, id) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-type-var(self, l, id):
-    with-loc(l, lam():
-        id.visit(self)
-    end)
+  method a-type-var(self, l, id) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = id.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-arrow(self, l, args, ret, _):
-    with-loc(l, lam():
-        all(_.visit(self), args) and ret.visit(self)
-    end)
+  method a-arrow(self, l, args, ret, _) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), args) and ret.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-arrow-argnames(self, l, args, ret, _):
-    with-loc(l, lam():
-        all(_.visit(self), args) and ret.visit(self)
-    end)
+  method a-arrow-argnames(self, l, args, ret, _) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), args) and ret.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-method(self, l, args, ret):
-    with-loc(l, lam():
-        all(_.visit(self), args) and ret.visit(self)
-    end)
+  method a-method(self, l, args, ret) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), args) and ret.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-record(self, l, fields):
-    with-loc(l, lam():
-        all(_.visit(self), fields)
-    end)
+  method a-record(self, l, fields) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-tuple(self, l, fields):
-    with-loc(l, lam():
-        all(_.visit(self), fields)
-    end)
+  method a-tuple(self, l, fields) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = all(_.visit(self), fields)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-app(self, l, ann, args):
-    with-loc(l, lam():
-        ann.visit(self) and all(_.visit(self), args)
-    end)
+  method a-app(self, l, ann, args) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = ann.visit(self) and all(_.visit(self), args)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-pred(self, l, ann, exp):
-    with-loc(l, lam():
-        ann.visit(self) and exp.visit(self)
-    end)
+  method a-pred(self, l, ann, exp) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = ann.visit(self) and exp.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-dot(self, l, obj, field):
-    with-loc(l, lam():
-        obj.visit(self)
-    end)
+  method a-dot(self, l, obj, field) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = obj.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end,
-  method a-field(self, l, name, ann):
-    with-loc(l, lam():
-        ann.visit(self)
-    end)
+  method a-field(self, l, name, ann) block:
+    old-loc = loc-tracking-enclosing
+    loc-tracking-enclosing := l
+    result = ann.visit(self)
+    loc-tracking-enclosing := old-loc
+    result
   end
-  }
-end
+}
 
 dummy-loc-visitor = {
   method option(self, opt):

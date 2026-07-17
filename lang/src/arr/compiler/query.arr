@@ -25,7 +25,7 @@ fun find-name-key-by-srcloc(resolved :: A.Program, target :: A.Loc, expected-nam
        ```
   var best-key = none
   var best-span = 0
-  visitor = A.loc-tracking-iter-visitor(lam(name, enclosing) block:
+  fun consider(name :: A.Name, enclosing :: A.Loc) -> Boolean block:
     when enclosing.same-file(target) and enclosing.contains(target) and (name.toname() == expected-name):
       span = enclosing.end-char - enclosing.start-char
       when is-none(best-key) or (span < best-span) block:
@@ -34,7 +34,15 @@ fun find-name-key-by-srcloc(resolved :: A.Program, target :: A.Loc, expected-nam
       end
     end
     true
-  end)
+  end
+  visitor = A.loc-tracking-iter-visitor.{
+    method s-name(self, l, s): consider(A.s-name(l, s), l) end,
+    method s-underscore(self, l): consider(A.s-underscore(l), l) end,
+    method s-global(self, s): consider(A.s-global(s), self.enclosing-loc()) end,
+    method s-type-global(self, s): consider(A.s-type-global(s), self.enclosing-loc()) end,
+    method s-module-global(self, s): consider(A.s-module-global(s), self.enclosing-loc()) end,
+    method s-atom(self, base, serial): consider(A.s-atom(base, serial), self.enclosing-loc()) end
+  }
   resolved.visit(visitor)
   best-key
 end
